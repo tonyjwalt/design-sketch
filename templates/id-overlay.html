@@ -6,15 +6,17 @@
     background: #111;
     color: #fff;
     font: 11px/1.4 ui-monospace, monospace;
-    padding: 2px 6px;
+    padding: 4px 6px;
     border-radius: 3px;
     opacity: 0;
     transition: opacity 0.1s;
+    white-space: nowrap;
   }
   .id-badge.visible {
     opacity: 1;
-    pointer-events: auto;
-    cursor: pointer;
+  }
+  .id-badge-hint {
+    color: #999;
   }
 </style>
 
@@ -22,21 +24,52 @@
 (function () {
   var badge = document.createElement('div');
   badge.className = 'id-badge';
-  badge.title = 'Click to copy';
+  var titleLine = document.createElement('div');
+  var hintLine = document.createElement('div');
+  hintLine.className = 'id-badge-hint';
+  badge.appendChild(titleLine);
+  badge.appendChild(hintLine);
   document.body.appendChild(badge);
 
-  var current = null;
+  var current = null;   // nearest ancestor carrying an id
+  var leaf = null;      // deepest hovered element, may equal current
+  var altHeld = false;
+
+  function leafClass() {
+    if (!leaf || leaf === current || !leaf.classList.length) return null;
+    return leaf.classList[0];
+  }
+
+  function idLabel() {
+    return '#' + current.id;
+  }
+
+  function fullLabel() {
+    var cls = leafClass();
+    return cls ? idLabel() + ' .' + cls : idLabel();
+  }
+
+  function render() {
+    if (!current) {
+      badge.classList.remove('visible');
+      return;
+    }
+    titleLine.textContent = altHeld ? fullLabel() : idLabel();
+    hintLine.textContent = altHeld ? '⌥C to copy' : 'C to copy';
+    badge.classList.add('visible');
+  }
 
   document.addEventListener('mouseover', function (e) {
     var el = e.target.closest('[id]');
     if (!el || el === document.body) {
-      badge.classList.remove('visible');
       current = null;
+      leaf = null;
+      render();
       return;
     }
     current = el;
-    badge.textContent = '#' + el.id;
-    badge.classList.add('visible');
+    leaf = e.target;
+    render();
   });
 
   document.addEventListener('mousemove', function (e) {
@@ -45,13 +78,28 @@
     badge.style.top = e.clientY + 12 + 'px';
   });
 
-  badge.addEventListener('click', function () {
-    if (!current) return;
-    navigator.clipboard.writeText('#' + current.id);
-    badge.textContent = 'copied';
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Alt') {
+      altHeld = true;
+      render();
+      return;
+    }
+    if (!current || e.code !== 'KeyC') return;
+    var active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+    var text = e.altKey ? fullLabel() : idLabel();
+    navigator.clipboard.writeText(text);
+    hintLine.textContent = 'copied';
     setTimeout(function () {
-      if (current) badge.textContent = '#' + current.id;
+      if (current) hintLine.textContent = altHeld ? '⌥C to copy' : 'C to copy';
     }, 600);
+  });
+
+  document.addEventListener('keyup', function (e) {
+    if (e.key === 'Alt') {
+      altHeld = false;
+      render();
+    }
   });
 })();
 </script>

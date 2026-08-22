@@ -64,5 +64,9 @@ skill's own generic choices, not copied verbatim; the skill never inspects a tar
 tokens at generation time. See ADR-0003.
 
 **ID overlay**:
-A hover badge showing an element's id, with click-to-copy, injected into exploration and tuned
-sketches by default (opt-out, not opt-in). Removed at bake, same as the tuner panel — see ADR-0004.
+A hover badge showing an element's id, with keyboard copy — `C` copies the id alone, `Alt+C` copies
+the id plus the hovered leaf element's class — injected into exploration and tuned sketches by
+default (opt-out, not opt-in). Removed at bake, same as the tuner panel — see ADR-0004. Copy is
+keyboard-driven rather than click-driven because the badge tracks the cursor at a fixed offset, so
+it can never be reached by moving toward it — clicking it would mean chasing (and, since the badge
+itself has no id, an early click-handler design also hid it right as the cursor arrived).

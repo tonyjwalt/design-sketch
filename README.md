@@ -28,7 +28,7 @@ Every sketch, at every stage, is exactly one self-contained `.html` file. See `d
 | `references/tuner-conventions.md` | Element-per-value-type mapping for tuner panels |
 | `templates/wireframe-tokens.css` | Shipped grayscale/semantic token scale for wireframe mode |
 | `templates/tuner-panel.html` | Control-panel skeleton with generic binding JS |
-| `templates/id-overlay.html` | Hover-to-reveal-ID badge with click-to-copy |
+| `templates/id-overlay.html` | Hover-to-reveal-ID badge, press C to copy |
 | `CONTEXT.md` | Domain glossary — sketch lifecycle, tuner, bake, wireframe mode |
 | `docs/adr/` | Architectural decisions, including why every sketch stays one file |
 | `tests/` | Static structure checks and smoke tests |
