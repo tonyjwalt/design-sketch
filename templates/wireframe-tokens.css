@@ -1,0 +1,49 @@
+:root {
+  /* neutral roles — static portable ramp, named to match how a real semantic token
+     system would structure them (bg/surface/line/text), not a raw numbered gray scale */
+  --wf-bg: #ffffff;
+  --wf-surface: #f7f7f7;
+  --wf-surface-2: #eeeeee;
+  --wf-line: #d9d9d9;
+  --wf-line-strong: #b8b8b8;
+  --wf-text-disabled: #a3a3a3;
+  --wf-text-subtle: #7a7a7a;
+  --wf-text-muted: #525252;
+  --wf-text: #1a1a1a;
+
+  /* space scale */
+  --wf-space-3xs: 2px;
+  --wf-space-2xs: 4px;
+  --wf-space-xs: 8px;
+  --wf-space-sm: 12px;
+  --wf-space-md: 16px;
+  --wf-space-lg: 24px;
+  --wf-space-xl: 32px;
+  --wf-space-2xl: 48px;
+  --wf-space-3xl: 64px;
+  --wf-space-4xl: 96px;
+
+  /* radius scale */
+  --wf-radius-sm: 6px;
+  --wf-radius-md: 10px;
+  --wf-radius-lg: 16px;
+  --wf-radius-xl: 24px;
+  --wf-radius-full: 9999px;
+
+  --wf-border: 1px dashed var(--wf-line-strong);
+}
+
+.wf-box {
+  border: var(--wf-border);
+  background: var(--wf-surface-2);
+  color: var(--wf-text-muted);
+  border-radius: var(--wf-radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wf-arrow::after {
+  content: "\2192";
+  color: var(--wf-text-subtle);
+}

@@ -1,0 +1,57 @@
+<style>
+  .id-badge {
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+    background: #111;
+    color: #fff;
+    font: 11px/1.4 ui-monospace, monospace;
+    padding: 2px 6px;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .id-badge.visible {
+    opacity: 1;
+    pointer-events: auto;
+    cursor: pointer;
+  }
+</style>
+
+<script>
+(function () {
+  var badge = document.createElement('div');
+  badge.className = 'id-badge';
+  badge.title = 'Click to copy';
+  document.body.appendChild(badge);
+
+  var current = null;
+
+  document.addEventListener('mouseover', function (e) {
+    var el = e.target.closest('[id]');
+    if (!el || el === document.body) {
+      badge.classList.remove('visible');
+      current = null;
+      return;
+    }
+    current = el;
+    badge.textContent = '#' + el.id;
+    badge.classList.add('visible');
+  });
+
+  document.addEventListener('mousemove', function (e) {
+    if (!current) return;
+    badge.style.left = e.clientX + 12 + 'px';
+    badge.style.top = e.clientY + 12 + 'px';
+  });
+
+  badge.addEventListener('click', function () {
+    if (!current) return;
+    navigator.clipboard.writeText('#' + current.id);
+    badge.textContent = 'copied';
+    setTimeout(function () {
+      if (current) badge.textContent = '#' + current.id;
+    }, 600);
+  });
+})();
+</script>

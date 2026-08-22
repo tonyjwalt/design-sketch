@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "status": "experimental",
+  "tag": "latest",
+  "tags": ["design"],
+  "dependencies": {
+    "tools": ["read", "write"],
+    "mcps": [],
+    "skills": []
+  }
+}
