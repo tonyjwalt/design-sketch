@@ -1,21 +1,47 @@
 # Smoke Tests — design-sketch
 
-## Test S1: Base sketch — trigger and effort ladder
+## Test S1: Base sketch — the HTML gate holds under a positive-but-non-explicit reaction
 
-**Input:** "sketch this: a sidebar nav with 5 items"
+**Turn 1 input:** "sketch this: a sidebar nav with 5 items"
 
-**Validates:** Core skill activates and behaves like the original — unaffected by the new modes
+**Turn 2 input:** "yeah that looks good" (a positive reaction — NOT an explicit request for HTML)
+
+**Turn 3 input:** "ok, draw this in HTML"
+
+**Validates:** Step 2's hard gate — HTML only on explicit request, not inferred from approval
 
 **Pass criteria:**
-- [ ] Asks where to save the file (first-time behavior) or produces an ASCII sketch first
-- [ ] Does not produce an HTML file as the very first response
+- [ ] Turn 1 produces ASCII (or a clarifying question) first — never HTML as the first response
+- [ ] Turn 2 does NOT escalate to HTML despite the positive reaction — stays in ASCII/text, or at
+      most refines the ASCII sketch
+- [ ] Turn 3's explicit request is what actually triggers HTML production
 - [ ] Once produced, the HTML is a single self-contained file — no `<link>`/`<script src>` to any
       skill-internal file
 
 **Fail indicators:**
-- Produces HTML without resolving ambiguity first
+- Produces HTML at Turn 1 or Turn 2
+- Treats "looks good" as sufficient license to build HTML
 - The output file references `templates/` or `references/` paths at runtime instead of inlining
   their content
+
+---
+
+## Test S1b: Ambiguous request gets multi-option ASCII with a recommendation
+
+**Input:** "sketch a dashboard" (genuinely ambiguous — no layout implied)
+
+**Validates:** Step 2.2 — real ambiguity gets 2-3 labeled options plus a stated recommendation, not
+a single guess
+
+**Pass criteria:**
+- [ ] Response is ASCII, not HTML
+- [ ] At least 2 distinct labeled options are shown
+- [ ] A recommendation is stated, with a reason
+
+**Fail indicators:**
+- Produces a single ASCII sketch with no alternatives despite genuine ambiguity
+- Produces HTML directly
+- Asks more than 2-3 clarifying questions instead of just showing options
 
 ---
 
@@ -37,23 +63,29 @@ inside a repo that has its own token system, e.g. this portfolio site)
 
 ---
 
-## Test S3: Tuner panel uses templated binding, not one-off JS
+## Test S3: Tuner panel forks a copy and uses templated binding, not one-off JS
 
-**Input:** "add tuners for the sidebar width and the layout variant" (after S1's sketch exists)
+**Input:** "add tuners for the sidebar width, the layout variant, and the accent color — no palette
+exists yet for the accent color" (after S1's sketch exists)
 
-**Validates:** Tuners are wired via the generic `data-bind` mechanism from `templates/tuner-panel.html`,
-not authored per-control
+**Validates:** ADR-0006 (fork, don't edit in place) and that all three tuner shapes (continuous,
+discrete, color) wire through the generic `data-bind` mechanism in `templates/tuner-panel.html`, not
+authored per-control
 
 **Pass criteria:**
+- [ ] A new file is created (`<subject>-tuned.html`); S1's original sketch is byte-for-byte untouched
 - [ ] `references/tuner-conventions.md` guidance is followed: range input for the continuous value
-      (width), select/radio for the discrete value (layout variant)
-- [ ] Both controls use `data-bind`/`data-target` attributes; no per-control `addEventListener` was
+      (width) with a `data-readout`-wired `<output>`, select/radio for the discrete value (layout
+      variant), `<input type="color">` for the accent (no palette exists yet, per the input)
+- [ ] All controls use `data-bind`/`data-target` attributes; no per-control `addEventListener` was
       hand-written
 - [ ] Panel is a single `<fieldset class="tuner-panel">` block, not interleaved with sketch content
-- [ ] Sketch is still one file
+- [ ] Tuned file is still one self-contained file
 
 **Fail indicators:**
+- Original exploration sketch is modified instead of copied
 - Model writes bespoke JS logic per control instead of reusing the generic delegated listeners
+- Model uses swatch buttons for the accent color despite the input saying no palette exists yet
 - Panel markup is scattered through the DOM instead of one contiguous block
 
 ---
@@ -81,10 +113,12 @@ not authored per-control
 **Input:** "bake this into a reference sketch" (after S3's tuned sketch exists, tuners left at some
 non-default values)
 
-**Validates:** ADR-0002 — baking freezes values and removes dev-only affordances
+**Validates:** ADR-0002 (baking freezes values and removes dev-only affordances) and ADR-0006's
+naming rule (reference file is named off the original subject, not chained onto `-tuned`)
 
 **Pass criteria:**
-- [ ] New file is saved (the tuned sketch is not overwritten)
+- [ ] New file is saved as `<subject>-reference.html` (anchored to the original subject, not
+      `<subject>-tuned-reference.html`); the tuned sketch is not overwritten
 - [ ] The CSS custom properties/classes the tuners controlled now hold static values matching
       wherever the controls were left, not the original defaults
 - [ ] `.tuner-panel` markup, its `<style>`, and its `<script>` are entirely absent

@@ -8,12 +8,13 @@ from disposable exploration to a production-facing reference document, with opti
 
 **Exploration sketch**:
 The default state of a sketch — cheap, disposable, one of several produced while approaching a
-design. No tuners, no permanence expected.
+design. No tuners, no permanence expected. Preserved untouched once tuning starts — see ADR-0006.
 _Avoid_: draft (too generic)
 
 **Tuned sketch**:
-An exploration sketch with a tuner panel added to hone in a specific value or layout variant. Same
-single-file artifact, still disposable.
+A copy of an exploration sketch, forked (not edited in place — ADR-0006) with a tuner panel added to
+hone in a specific value or layout variant. Becomes the live file further iteration continues on
+until baked.
 
 **Reference sketch**:
 The sketch a design converges on — tuner values baked into static CSS, tuner panel and its binding
@@ -40,22 +41,27 @@ elsewhere.
 _Avoid_: asset, partial (implies something the output file references at runtime, which templates never are)
 
 **Tuner**:
-A native HTML control (range, select, checkbox, swatch buttons) wired to a design value via
-templated, generic binding JS. Two binding shapes:
-- Continuous value → one CSS custom property, via a generic `input` listener (`style.setProperty`)
+A native HTML control (range, select, checkbox, color input, swatch buttons) wired to a design value
+via templated, generic binding JS. Two binding shapes:
+- Continuous or fixed value → one CSS custom property, via a generic `input`/`click` listener
+  (`style.setProperty`) — covers range, color input, and swatch buttons alike
 - Discrete variant → a class or data-attribute toggle on a container, via a generic `change` listener
 
 What gets tuned (which property, which class) is a per-sketch human decision, never inferred by the
-model — only the wiring mechanism is templated.
+model — only the wiring mechanism is templated. For color specifically, whether to use a swatch row
+(a known palette to choose among) or an open `<input type="color">` (no palette yet, tuner is
+helping find one) is a judgment call, not a fixed rule — both are legitimate.
 _Avoid_: control (too generic once "tuner" is defined precisely)
 
 **Wireframe mode**:
 A fidelity mode for the HTML step that swaps in the skill's own shipped, portable semantic token
-scale (named neutral roles, space scale, radius scale, as resolved CSS custom properties) instead of
-realistic content and colors. The scale's *shape* — role names like `surface`/`line`/`text-muted`,
-a `3xs→4xl` space ladder, a `sm/md/lg/xl/full` radius ladder — is modeled on tonywalt.com's real
-semantic token system as a structural reference, but the values are static and portable; the skill
-never inspects a target project's actual tokens at generation time. See ADR-0003.
+scale (named neutral roles, a primitive space scale plus usage-scoped aliases, radius scale, as
+resolved CSS custom properties) instead of realistic content and colors. The scale's *shape* — role
+names like `surface`/`line`/`text-muted`, a `3xs→4xl` space ladder with `inset`/`inline`/`stack`/
+`layout` aliases over it, a `sm/md/lg/xl/full` radius ladder — is modeled on tonywalt.com's real
+semantic token system as a structural reference, but the values and alias step-mappings are the
+skill's own generic choices, not copied verbatim; the skill never inspects a target project's actual
+tokens at generation time. See ADR-0003.
 
 **ID overlay**:
 A hover badge showing an element's id, with click-to-copy, injected into exploration and tuned

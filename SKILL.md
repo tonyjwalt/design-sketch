@@ -5,8 +5,10 @@ description: Generate lightweight single-file HTML/CSS sketches to visualize pro
 
 # Design Sketch
 
-Lightweight HTML sketches that visualize ideas fast. Every cycle ends with an HTML file — exactly
-one, self-contained, at every stage of the lifecycle below. No exceptions (see `docs/adr/0001`).
+Lightweight HTML sketches that visualize ideas fast. Most requests should resolve entirely in
+plain-text ASCII (Step 2) — HTML is a deliberate escalation, not the default deliverable. When a
+sketch does get built, every cycle ends with an HTML file — exactly one, self-contained, at every
+stage of the lifecycle below. No exceptions (see `docs/adr/0001`).
 "Self-contained" means one *file* — an exploration or tuned sketch legitimately carries more than
 one `<style>`/`<script>` tag (its own, plus one contiguous block per active mode from Step 4.9/5.2).
 Only the reference stage, after baking strips those blocks, is guaranteed down to at most the
@@ -14,8 +16,10 @@ sketch's own `<style>`/`<script>` — a sketch that never authored its own `<scr
 
 ## Sketch lifecycle
 
-1. **Exploration** — disposable, cheap, one of several while approaching a design.
-2. **Tuned** — an exploration sketch with a tuner panel added (Step 5) to hone a value or variant live.
+1. **Exploration** — disposable, cheap, one of several while approaching a design. Preserved
+   untouched once tuning starts — Step 5 forks a copy rather than editing it.
+2. **Tuned** — a copy of the exploration sketch with a tuner panel added (Step 5) to hone a value or
+   variant live. Becomes the live file further iteration (Step 7) continues on.
 3. **Reference** — the sketch a design converges on. Tuner values baked into static CSS, tuner panel
    and ID overlay removed (Step 6). Handed off as the source of truth for production.
 
@@ -25,17 +29,25 @@ sketch's own `<style>`/`<script>` — a sketch that never authored its own `<scr
 
 First sketch in a session: ask where to save files. Remember for subsequent sketches.
 
-### 2. Resolve ambiguity
+### 2. Resolve — the default deliverable, not a preamble
 
-Before producing HTML, resolve unknowns with the cheapest tool:
+Ask and ASCII aren't a courtesy before the real answer — for most requests, they ARE the answer.
+**Do not produce HTML until the user asks for it directly.** Approving a direction, picking a
+favorite among options, or reacting positively is not the same as asking for HTML — wait for an
+explicit request (e.g. "draw this in HTML," "make this real"). If a request is suggestive but
+doesn't clearly ask for HTML (e.g. "formalize this," "hand it to the dev") — ask which they want
+rather than inferring it.
 
-1. **Ask** — if a question gets the answer, ask it
-2. **ASCII sketch** — if showing is faster than explaining, sketch inline in a fenced ` ```text `
-   block (plain response text isn't guaranteed monospace; a fence is, and alignment depends on it)
-3. **HTML sketch** — only when fidelity matters (layout, color, proportion)
-
-Spend the minimum effort to know what to draw. Break large ambiguous areas into smaller focused
-sketches rather than asking many questions.
+1. **Ask** — if a question gets the answer, ask it.
+2. **ASCII sketch** — the default response, almost always. Skip it only when the
+   request is so specific there's genuinely one thing to draw and nothing to resolve.
+   - One clear interpretation → sketch it once, in a fenced ` ```text ` block (plain response text
+     isn't guaranteed monospace; a fence is, and alignment depends on it).
+   - Multiple plausible directions → sketch 2-3 options side by side, each labeled, with a stated
+     recommendation and why.
+3. **Iterate here** — refine the options in ASCII as feedback comes in. Most requests should
+   resolve entirely in this loop, never touching HTML at all.
+4. **Escalate to HTML** — only on an explicit request. Move to Step 3.
 
 ### 3. Pick a fidelity mode
 
@@ -67,18 +79,19 @@ Name files descriptively: `sketch-<subject>.html`
 
 ### 5. Add tuners — only when asked
 
-1. Load `references/tuner-conventions.md` for the element-per-value-type mapping
-2. Load `templates/tuner-panel.html` and inline its markup, style, and script as one block
-3. Bind controls only via the `data-bind`/`data-target` attributes the template defines — never
+1. Copy the exploration sketch to `<subject>-tuned.html` first — don't edit the exploration file in
+   place. This keeps the clean version demoable and gives you a safe fallback if the tuner edit goes
+   wrong; the copy becomes the live file iteration continues on (Step 7)
+2. Load `references/tuner-conventions.md` for the element-per-value-type mapping
+3. Load `templates/tuner-panel.html` and inline its markup, style, and script as one block
+4. Bind controls only via the `data-bind`/`data-target` attributes the template defines — never
    author one-off JS per control. `data-target` means different things depending on `data-bind`:
    a CSS custom property name for `css-var`, a CSS selector for `class-toggle` — see
    `templates/tuner-panel.html`'s own examples of both before wiring a new control.
-4. Give a continuous control a readout via `data-readout="someId"` (bare id, no `#`) plus a matching
+5. Give a continuous control a readout via `data-readout="someId"` (bare id, no `#`) plus a matching
    `<output id="someId">` — the template's generic listener updates it via `getElementById`; don't
    hand-write a readout binding
-5. What gets tuned is a per-sketch human decision; don't infer it
-6. Edit the sketch **in place** — adding tuners doesn't fork a new file. The exploration → tuned →
-   reference lifecycle is one file evolving through stages; the only fork happens at bake (Step 6)
+6. What gets tuned is a per-sketch human decision; don't infer it
 
 This moves the sketch from exploration to **tuned**.
 
@@ -91,15 +104,16 @@ This moves the sketch from exploration to **tuned**.
    markup and leave the class-gated CSS rule as-is — don't flatten the rule into the base ruleset
 4. Delete the tuner panel block and the ID overlay block entirely (markup, style, and script for
    both)
-5. Save as a new file named `<tuned-sketch-name>-reference.html` — don't overwrite the tuned sketch,
-   so the exploration history survives
+5. Save as a new file named `<subject>-reference.html` — anchored to the original subject, not
+   chained onto the tuned file's name (`-tuned-reference` reads worse). Don't overwrite the tuned
+   sketch, so the tuning history survives
 
 This moves the sketch from tuned to **reference** (`docs/adr/0002`).
 
 ### 7. Iterate
 
-User reacts. Use the effort ladder again (ask → ASCII) to resolve what changed, then produce the
-next sketch.
+User reacts. Use the effort ladder again (ask → ASCII) to resolve what changed, then update the
+current live file — the tuned sketch once one exists (Step 5), otherwise the exploration sketch.
 
 ## Files
 

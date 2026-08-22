@@ -23,6 +23,29 @@
   --wf-space-3xl: 64px;
   --wf-space-4xl: 96px;
 
+  /* space aliases — usage-scoped names over the scale above, not new values.
+     Mirrors the shape of a real semantic token system (inset/stack/inline/layout roles), not any
+     one project's exact step mapping. */
+  --wf-space-inset-xs: var(--wf-space-xs);
+  --wf-space-inset-sm: var(--wf-space-sm);
+  --wf-space-inset-md: var(--wf-space-md);
+  --wf-space-inset-lg: var(--wf-space-lg);
+
+  --wf-space-inline-xs: var(--wf-space-2xs);
+  --wf-space-inline-sm: var(--wf-space-xs);
+  --wf-space-inline-md: var(--wf-space-sm);
+  --wf-space-inline-lg: var(--wf-space-md);
+
+  --wf-space-stack-xs: var(--wf-space-sm);
+  --wf-space-stack-sm: var(--wf-space-md);
+  --wf-space-stack-md: var(--wf-space-lg);
+  --wf-space-stack-lg: var(--wf-space-xl);
+
+  --wf-space-layout-xs: var(--wf-space-lg);
+  --wf-space-layout-sm: var(--wf-space-xl);
+  --wf-space-layout-md: var(--wf-space-2xl);
+  --wf-space-layout-lg: var(--wf-space-3xl);
+
   /* radius scale */
   --wf-radius-sm: 6px;
   --wf-radius-md: 10px;
@@ -38,6 +61,7 @@
   background: var(--wf-surface-2);
   color: var(--wf-text-muted);
   border-radius: var(--wf-radius-md);
+  padding: var(--wf-space-inset-md);
   display: flex;
   align-items: center;
   justify-content: center;

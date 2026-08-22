@@ -10,10 +10,13 @@ per-sketch human decision — these conventions cover the mechanism, not the cho
 | Continuous (spacing, size, opacity) | `<input type="range">` + adjacent number readout | `css-var` |
 | Discrete named options (variant, alignment) | `<select>` or radio group | `class-toggle` |
 | Boolean (visible, enabled) | `<input type="checkbox">` | `class-toggle` with one fixed class |
-| Fixed color/swatch set | Row of `<button>` swatches, not `<input type="color">` | `css-var` |
+| Known palette to choose among | Row of `<button value="...">` swatches | `css-var` |
+| No palette yet — tuner is helping find one | `<input type="color">` | `css-var` |
 
-Never use `<input type="color">` for a fixed semantic palette — an open color picker implies any
-color is valid, which isn't true for a token-driven sketch.
+Both color options are legitimate; which one fits depends on whether there's already a palette to
+choose among, or the tuner's job is to help find one — not a fixed rule yet, use judgment. A swatch
+button's `value` attribute holds the fixed color it applies; the panel's script reads it the same
+way it reads a range or color input's `.value`.
 
 ## `data-target` means different things per `data-bind`
 

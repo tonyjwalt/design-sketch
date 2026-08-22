@@ -23,6 +23,18 @@
   .tuner-panel input[type="range"] {
     flex: 1;
   }
+  .tuner-panel .swatch-row {
+    display: flex;
+    gap: 4px;
+  }
+  .tuner-panel .swatch-row button {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+  }
 </style>
 
 <fieldset class="tuner-panel" id="tunerPanel">
@@ -47,6 +59,19 @@
       <option value="spacious" selected>Spacious</option>
     </select>
   </label>
+
+  <!-- Swatch example — use when a fixed palette already exists to choose among. Copy one
+       <button value="..."> per swatch; the value IS the color it applies. If there's no palette
+       yet and the tuner's job is to help find one, use <input type="color" data-bind="css-var"
+       data-target="--x"> instead — it already works with the same css-var binding, no swatches
+       needed (see references/tuner-conventions.md). -->
+  <label>
+    Accent
+    <span class="swatch-row" role="group" aria-label="Accent color">
+      <button type="button" value="#3366ff" data-bind="css-var" data-target="--accent-color" style="background:#3366ff" aria-label="#3366ff"></button>
+      <button type="button" value="#e0403f" data-bind="css-var" data-target="--accent-color" style="background:#e0403f" aria-label="#e0403f"></button>
+    </span>
+  </label>
 </fieldset>
 
 <script>
@@ -54,16 +79,23 @@
   var panel = document.getElementById('tunerPanel');
   if (!panel) return;
 
+  function applyCssVar(el) {
+    var unit = el.dataset.unit || (el.type === 'range' ? 'px' : '');
+    document.documentElement.style.setProperty(el.dataset.target, el.value + unit);
+    if (el.dataset.readout) {
+      var out = document.getElementById(el.dataset.readout);
+      if (out) out.textContent = el.value + unit;
+    }
+  }
+
   panel.addEventListener('input', function (e) {
     var el = e.target;
-    if (el.dataset.bind === 'css-var') {
-      var unit = el.dataset.unit || (el.type === 'range' ? 'px' : '');
-      document.documentElement.style.setProperty(el.dataset.target, el.value + unit);
-      if (el.dataset.readout) {
-        var out = document.getElementById(el.dataset.readout);
-        if (out) out.textContent = el.value + unit;
-      }
-    }
+    if (el.dataset.bind === 'css-var') applyCssVar(el);
+  });
+
+  panel.addEventListener('click', function (e) {
+    var el = e.target.closest('button[data-bind="css-var"]');
+    if (el) applyCssVar(el);
   });
 
   panel.addEventListener('change', function (e) {
