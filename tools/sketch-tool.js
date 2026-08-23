@@ -33,6 +33,14 @@ function usage() {
     '      carries a panel: appends this control to it in place. --type css-var takes either',
     '      --min/--max (continuous, range input) or --options (swatch buttons). --type class-toggle',
     '      takes --options (variant names for a <select>) and interprets --target as a CSS selector.',
+    '',
+    '  tune <file> --remove <target>',
+    '      Deletes the control bound to <target> from an existing panel. Drops the whole panel',
+    '      block if it was the only control.',
+    '',
+    '  tune <file> --edit <old-target> --type ... --target ... --label ... [...]',
+    '      Replaces the control bound to <old-target> with a freshly built one from the given',
+    '      flags (same flags as creating a control) — a wholesale swap, not a partial patch.',
   ].join('\n');
 }
 
@@ -276,21 +284,91 @@ function injectTunerPanel(content, controlHtml) {
   return content.slice(0, bodyClose.index) + block + content.slice(bodyClose.index);
 }
 
-function appendControlToPanel(content, controlHtml) {
+function locatePanelFieldset(content) {
   const startIdx = content.indexOf(TUNER_PANEL_START);
   const endIdx = content.indexOf(TUNER_PANEL_END);
   if (startIdx === -1 || endIdx === -1) {
-    throw new Error('tuner panel start/end markers not both present');
+    throw new Error('no tuner panel found in this file');
   }
 
   const panelSection = content.slice(startIdx, endIdx);
-  const closeMatch = /<\/fieldset>/.exec(panelSection);
-  if (!closeMatch) {
-    throw new Error('no </fieldset> found inside the existing tuner panel block');
+  const fieldsetOpen = /<fieldset[^>]*>/.exec(panelSection);
+  const fieldsetCloseIdx = panelSection.indexOf('</fieldset>');
+  if (!fieldsetOpen || fieldsetCloseIdx === -1) {
+    throw new Error('no <fieldset> found inside the existing tuner panel block');
   }
 
-  const insertAt = startIdx + closeMatch.index;
-  return content.slice(0, insertAt) + controlHtml + '\n' + content.slice(insertAt);
+  return {
+    startIdx,
+    endIdx,
+    fieldsetAbsStart: startIdx + fieldsetOpen.index,
+    fieldsetCloseAbsStart: startIdx + fieldsetCloseIdx, // where '</fieldset>' itself begins
+    fieldsetAbsEnd: startIdx + fieldsetCloseIdx + '</fieldset>'.length,
+    fieldsetInner: panelSection.slice(fieldsetOpen.index + fieldsetOpen[0].length, fieldsetCloseIdx),
+  };
+}
+
+function appendControlToPanel(content, controlHtml) {
+  const loc = locatePanelFieldset(content);
+  return content.slice(0, loc.fieldsetCloseAbsStart) + controlHtml + '\n' + content.slice(loc.fieldsetCloseAbsStart);
+}
+
+// Finds each top-level <label>...</label> block within a fieldset's inner HTML. Tuner controls
+// never nest labels (references/tuner-conventions.md: one <label> per control), so a non-greedy
+// match per block is sufficient.
+function findLabelBlocks(fieldsetInner) {
+  const blocks = [];
+  const re = /<label>[\s\S]*?<\/label>/g;
+  let m;
+  while ((m = re.exec(fieldsetInner)) !== null) {
+    blocks.push({ start: m.index, end: m.index + m[0].length, text: m[0] });
+  }
+  return blocks;
+}
+
+function findControlIndexByTarget(blocks, target) {
+  return blocks.findIndex((b) => b.text.includes(`data-target="${target}"`));
+}
+
+// Rebuilds the panel's <fieldset> from a fresh list of control blocks. An empty list drops the
+// entire marker-wrapped panel block (style, fieldset, script) — an empty panel isn't a valid state
+// per references/tuner-conventions.md's "always one <fieldset>" rule.
+function spliceFieldset(content, loc, controlTexts) {
+  if (controlTexts.length === 0) {
+    return content.slice(0, loc.startIdx) + content.slice(loc.endIdx + TUNER_PANEL_END.length);
+  }
+  const newFieldset = `<fieldset class="tuner-panel" id="tunerPanel">\n  <legend>Tuners</legend>\n\n${controlTexts.join('\n\n')}\n</fieldset>`;
+  return content.slice(0, loc.fieldsetAbsStart) + newFieldset + content.slice(loc.fieldsetAbsEnd);
+}
+
+function removeControlFromPanel(content, target) {
+  const loc = locatePanelFieldset(content);
+  const blocks = findLabelBlocks(loc.fieldsetInner);
+  const idx = findControlIndexByTarget(blocks, target);
+  if (idx === -1) {
+    throw new Error(`no control targeting "${target}" found in the existing tuner panel`);
+  }
+  const texts = blocks.map((b) => b.text).filter((_, i) => i !== idx);
+  return spliceFieldset(content, loc, texts);
+}
+
+// Replaces the control bound to opts.edit with a freshly built one from opts (a wholesale swap,
+// not a merge of old/new attributes — see .scratch/design-sketch-tooling/issues/06). Builds the
+// replacement against the panel with the old control already removed, so reusing the same --label
+// doesn't trip the new control's own id-collision check against itself.
+function editControlInPanel(content, opts) {
+  const loc = locatePanelFieldset(content);
+  const blocks = findLabelBlocks(loc.fieldsetInner);
+  const idx = findControlIndexByTarget(blocks, opts.edit);
+  if (idx === -1) {
+    throw new Error(`no control targeting "${opts.edit}" found in the existing tuner panel`);
+  }
+
+  const texts = blocks.map((b) => b.text);
+  const contentWithoutOld = spliceFieldset(content, loc, texts.filter((_, i) => i !== idx));
+  const controlHtml = buildControlMarkup(opts, contentWithoutOld);
+  texts[idx] = controlHtml;
+  return spliceFieldset(content, loc, texts);
 }
 
 // `sketch-foo.html` -> `sketch-foo-tuned.html`; already-tuned names pass through unchanged so a
@@ -342,6 +420,8 @@ const TUNE_VALUE_FLAGS = {
   '--value': 'value',
   '--unit': 'unit',
   '--prefix': 'prefix',
+  '--remove': 'remove',
+  '--edit': 'edit',
 };
 
 function parseTuneArgs(args) {
@@ -357,6 +437,8 @@ function parseTuneArgs(args) {
     unit: null,
     readout: false,
     prefix: null,
+    remove: null,
+    edit: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -384,8 +466,27 @@ function parseTuneArgs(args) {
   return opts;
 }
 
+// Every value-flag key except the two mode selectors (remove/edit identify a control, they don't
+// define one) — derived from TUNE_VALUE_FLAGS so a new flag added there can't drift out of sync.
+const CONTROL_DEFINITION_FLAGS = Object.values(TUNE_VALUE_FLAGS).filter((k) => k !== 'remove' && k !== 'edit');
+
 function validateTuneOpts(opts) {
   if (!opts.file) throw new Error('missing required <file> argument');
+
+  if (opts.remove !== null && opts.edit !== null) {
+    throw new Error('--remove and --edit are mutually exclusive');
+  }
+
+  if (opts.remove !== null) {
+    const hasOther = opts.readout || CONTROL_DEFINITION_FLAGS.some((k) => opts[k] !== null);
+    if (hasOther) {
+      throw new Error('--remove takes no other flags besides <file> and --remove <target>');
+    }
+    return;
+  }
+
+  // --edit and plain add-mode both define a control with the same flags; --edit additionally
+  // needs the old target (opts.edit) identifying which control to replace.
   if (opts.type !== 'css-var' && opts.type !== 'class-toggle') {
     throw new Error(`--type must be "css-var" or "class-toggle", got "${opts.type}"`);
   }
@@ -458,6 +559,22 @@ function runTune(args) {
 
   const content = fs.readFileSync(filePath, 'utf8');
 
+  if (opts.remove !== null) {
+    const updated = removeControlFromPanel(content, opts.remove);
+    fs.writeFileSync(filePath, updated, 'utf8');
+    console.log(`sketch-tool: removed control targeting "${opts.remove}" from ${opts.file}`);
+    return;
+  }
+
+  if (opts.edit !== null) {
+    const updated = editControlInPanel(content, opts);
+    fs.writeFileSync(filePath, updated, 'utf8');
+    console.log(
+      `sketch-tool: replaced control targeting "${opts.edit}" with an updated ${opts.type} control in ${opts.file}`
+    );
+    return;
+  }
+
   if (content.includes(TUNER_PANEL_START)) {
     const controlHtml = buildControlMarkup(opts, content);
     const updated = appendControlToPanel(content, controlHtml);
@@ -522,5 +639,7 @@ module.exports = {
   buildControlMarkup,
   injectTunerPanel,
   appendControlToPanel,
+  removeControlFromPanel,
+  editControlInPanel,
   deriveTunedPath,
 };

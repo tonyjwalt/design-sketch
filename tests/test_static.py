@@ -345,6 +345,172 @@ def test_tune_class_toggle_rejects_min_max():
         assert result.returncode != 0
 
 
+def make_two_control_tuned_file(tmp):
+    """Sets up sketch-demo-tuned.html with a Spacing (css-var) and a Layout (class-toggle) control."""
+    (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+    run_tune(
+        tmp, "sketch-demo.html",
+        ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+    )
+    run_tune(
+        tmp, "sketch-demo-tuned.html",
+        ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
+    )
+
+
+def test_tune_remove_deletes_one_of_several_controls():
+    """`--remove <target>` deletes just the matching control, leaving the others and the panel."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)
+        run_tune(tmp, "sketch-demo-tuned.html", ["--remove", "body"])
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert "<!-- design-sketch:tuner-panel -->" in out
+        assert out.count("<label>") == 1
+        assert 'data-target="--space-md"' in out
+        assert 'data-target="body"' not in out
+
+
+def test_tune_remove_last_control_drops_entire_panel():
+    """`--remove` on a panel's only remaining control drops the whole marker-wrapped panel block."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+        run_tune(tmp, "sketch-demo-tuned.html", ["--remove", "--space-md"])
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert "design-sketch:tuner-panel" not in out
+        assert "tuner-panel" not in out
+        assert "function applyCssVar" not in out
+
+
+def test_tune_remove_unknown_target_errors():
+    """`--remove` against a target with no matching control fails clearly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)
+        result = run_tune(tmp, "sketch-demo-tuned.html", ["--remove", "--nonexistent"], check=False)
+        assert result.returncode != 0
+        assert "--nonexistent" in result.stderr
+
+
+def test_tune_remove_on_file_with_no_panel_errors():
+    """`--remove` against a file that never had a tuner panel fails clearly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(tmp, "sketch-demo.html", ["--remove", "--space-md"], check=False)
+        assert result.returncode != 0
+        assert "no tuner panel" in result.stderr
+
+
+def test_tune_edit_on_file_with_no_panel_errors():
+    """`--edit` against a file that never had a tuner panel fails clearly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--edit", "--space-md", "--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "0", "--max", "1"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "no tuner panel" in result.stderr
+
+
+def test_tune_edit_replaces_value_in_place():
+    """`--edit <target>` replaces that control's definition, preserving the other control."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            [
+                "--edit", "--space-md", "--type", "css-var", "--target", "--space-md",
+                "--label", "Spacing", "--min", "8", "--max", "128",
+            ],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert out.count("<label>") == 2  # still two controls
+        assert 'min="8"' in out and 'max="128"' in out
+        assert 'min="4"' not in out  # old range is gone, not left behind
+        assert 'data-target="body"' in out  # untouched control survives
+
+
+def test_tune_edit_preserves_position_among_three_controls():
+    """Editing the middle control of three keeps the original ordering — a 2-control fixture can't
+    distinguish "edited in place" from "removed and re-appended at the end", so this uses three."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)  # gives --space-md (Spacing), body (Layout)
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--options", "#111,#222"],
+        )  # now: Spacing, Layout, Accent
+
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            [
+                "--edit", "body", "--type", "class-toggle", "--target", "body",
+                "--label", "Layout", "--options", "compact,spacious,cozy",
+            ],
+        )
+
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        order = [out.index('data-target="--space-md"'), out.index('data-target="body"'), out.index('data-target="--accent-color"')]
+        assert order == sorted(order)  # Spacing, then Layout, then Accent — unchanged order
+        assert out.count("<option") == 3  # the edited select picked up the new third option
+
+
+def test_tune_edit_can_change_the_target():
+    """`--edit <old-target>` can rebind the control to a different --target."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            [
+                "--edit", "--space-md", "--type", "css-var", "--target", "--space-lg",
+                "--label", "Spacing", "--min", "4", "--max", "64",
+            ],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'data-target="--space-lg"' in out
+        assert 'data-target="--space-md"' not in out
+
+
+def test_tune_edit_unknown_target_errors():
+    """`--edit` against a target with no matching control fails clearly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)
+        result = run_tune(
+            tmp, "sketch-demo-tuned.html",
+            ["--edit", "--nonexistent", "--type", "css-var", "--target", "--x", "--label", "X", "--min", "0", "--max", "1"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--nonexistent" in result.stderr
+
+
+def test_tune_remove_and_edit_are_mutually_exclusive():
+    """Passing both --remove and --edit fails rather than silently picking one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)
+        result = run_tune(
+            tmp, "sketch-demo-tuned.html",
+            ["--remove", "body", "--edit", "--space-md"],
+            check=False,
+        )
+        assert result.returncode != 0
+
+
+def test_tune_remove_rejects_control_definition_flags():
+    """`--remove` combined with control-definition flags (e.g. --label) fails clearly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)
+        result = run_tune(
+            tmp, "sketch-demo-tuned.html",
+            ["--remove", "body", "--label", "Layout"],
+            check=False,
+        )
+        assert result.returncode != 0
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = failed = 0

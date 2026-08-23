@@ -122,6 +122,20 @@ Name files descriptively: `sketch-<subject>.html`
    Controls are bound only via the `data-bind`/`data-target` attributes the template defines; see
    `templates/tuner-panel.html`'s own examples of both bind types before wiring one by hand.
 
+   To change an already-tuned file's controls, don't hand-edit the panel markup — use the same tool:
+
+   ```
+   node tools/sketch-tool.js tune <file> --remove <target>
+   node tools/sketch-tool.js tune <file> --edit <old-target> --type ... --target ... --label ... [...]
+   ```
+
+   `--remove <target>` deletes the control bound to that target — dropping the whole panel block if
+   it was the only one left, since an empty panel isn't valid. `--edit <old-target>` takes the same
+   flags as creating a control and replaces the matching control wholesale (not a partial patch, so
+   re-specify every flag, not just the one changing); pass `--edit`'s value to `--target` too if the
+   binding itself isn't changing. Both are in-place edits to `<file>` — like append, neither forks a
+   new copy, since a tuned file is already the live file iteration continues on (Step 7).
+
    **If Node isn't available**, fall back to the manual procedure: copy the exploration sketch to
    `<subject>-tuned.html` first (don't edit the exploration file in place). Load
    `templates/tuner-panel.html` and inline its markup, style, and script as one contiguous block,
