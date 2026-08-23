@@ -4,17 +4,60 @@
     bottom: 16px;
     right: 16px;
     z-index: 999;
+    width: 260px;
     background: #fff;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    padding: 12px 16px;
+    border: 1px solid #dcdfe4;
+    border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(20, 22, 30, 0.18), 0 2px 6px rgba(20, 22, 30, 0.08);
+    overflow: hidden;
     font: 13px system-ui, sans-serif;
+  }
+  /* <summary> is the collapse/expand toggle — native disclosure behavior, no JS needed. Its
+     default marker/style varies by browser, so it's deliberately restyled below rather than
+     left default. */
+  .tuner-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    background: #f4f5f7;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6b7280;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+  .tuner-panel-header::-webkit-details-marker {
+    display: none;
+  }
+  .tuner-panel-header::before {
+    content: "\25b8";
+    font-size: 16px;
+    line-height: 1;
+    color: #6b7280;
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+  .tuner-panel[open] > .tuner-panel-header {
+    border-bottom: 1px solid #dcdfe4;
+  }
+  .tuner-panel[open] > .tuner-panel-header::before {
+    transform: rotate(90deg);
+  }
+  .tuner-panel-header:focus-visible {
+    outline: 2px solid #3366ff;
+    outline-offset: -2px;
+  }
+  .tuner-panel-body {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    padding: 12px 14px;
   }
-  .tuner-panel label {
+  .tuner-panel-body > label {
     display: flex;
     justify-content: space-between;
     gap: 8px;
@@ -37,8 +80,9 @@
   }
 </style>
 
-<fieldset class="tuner-panel" id="tunerPanel">
-  <legend>Tuners</legend>
+<details class="tuner-panel" id="tunerPanel" open>
+  <summary class="tuner-panel-header">Tuners</summary>
+  <div class="tuner-panel-body">
 
   <!-- Continuous example — copy one label per value, edit data-target/name/min/max/value.
        data-readout is optional: point it at an <output> id to get a live value readout for free. -->
@@ -72,7 +116,9 @@
       <button type="button" value="#e0403f" data-bind="css-var" data-target="--accent-color" style="background:#e0403f" aria-label="#e0403f"></button>
     </span>
   </label>
-</fieldset>
+
+  </div>
+</details>
 
 <script>
 (function () {

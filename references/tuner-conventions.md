@@ -38,9 +38,14 @@ that's a template gap, not something to patch with one-off JS.
 
 ## Panel rules
 
-- Always one `<fieldset class="tuner-panel">`, positioned fixed in a corner, never inline in the
+- Always one `<details class="tuner-panel">`, positioned fixed in a corner, never inline in the
   layout being tuned
-- One `<legend>` naming what's being tuned
+- One `<summary class="tuner-panel-header">` naming what's being tuned — it doubles as the native
+  collapse/expand toggle, so the panel can tuck down to just its header with no custom JS. Collapse
+  the chrome, not the controls: a tuner's whole point is staying visible while it's in use, so this
+  is for "get it out of my way for a second," not a set-and-forget disclosure
+- Controls live inside a `<div class="tuner-panel-body">` — this is what `sketch-tool tune`
+  appends/removes/edits against
 - Each control's `<label>` names the value in plain language, not the CSS variable
 - Never wire a control to more than one target
 - Keep the panel markup, style, and script contiguous and not interleaved with sketch content — it
