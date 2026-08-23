@@ -269,7 +269,7 @@ function buildControlMarkup(opts, existingContent) {
 }
 
 // Pulls the generic .tuner-panel <style> and listener <script> straight out of the template —
-// these never vary per control, only the fieldset's contents do.
+// these never vary per control, only the panel body's contents do.
 function loadPanelChrome() {
   const templatePath = path.join(TEMPLATES_DIR, 'tuner-panel.html');
   const template = fs.readFileSync(templatePath, 'utf8');
@@ -283,8 +283,10 @@ function loadPanelChrome() {
 
 function buildPanelBlock(controlHtml) {
   const { style, script } = loadPanelChrome();
-  const fieldset = `<fieldset class="tuner-panel" id="tunerPanel">\n  <legend>Tuners</legend>\n\n${controlHtml}\n</fieldset>`;
-  return `${TUNER_PANEL_START}\n${style}\n\n${fieldset}\n\n${script}\n${TUNER_PANEL_END}\n`;
+  const details =
+    `<details class="tuner-panel" id="tunerPanel" open>\n  <summary class="tuner-panel-header">Tuners</summary>\n` +
+    `  <div class="tuner-panel-body">\n\n${controlHtml}\n\n  </div>\n</details>`;
+  return `${TUNER_PANEL_START}\n${style}\n\n${details}\n\n${script}\n${TUNER_PANEL_END}\n`;
 }
 
 function injectTunerPanel(content, controlHtml) {
@@ -296,7 +298,7 @@ function injectTunerPanel(content, controlHtml) {
   return content.slice(0, bodyClose.index) + block + content.slice(bodyClose.index);
 }
 
-function locatePanelFieldset(content) {
+function locatePanelBody(content) {
   const startIdx = content.indexOf(TUNER_PANEL_START);
   const endIdx = content.indexOf(TUNER_PANEL_END);
   if (startIdx === -1 || endIdx === -1) {
@@ -304,35 +306,35 @@ function locatePanelFieldset(content) {
   }
 
   const panelSection = content.slice(startIdx, endIdx);
-  const fieldsetOpen = /<fieldset[^>]*>/.exec(panelSection);
-  const fieldsetCloseIdx = panelSection.indexOf('</fieldset>');
-  if (!fieldsetOpen || fieldsetCloseIdx === -1) {
-    throw new Error('no <fieldset> found inside the existing tuner panel block');
+  const bodyOpen = /<div class="tuner-panel-body">/.exec(panelSection);
+  const bodyCloseIdx = panelSection.indexOf('</div>');
+  if (!bodyOpen || bodyCloseIdx === -1) {
+    throw new Error('no <div class="tuner-panel-body"> found inside the existing tuner panel block');
   }
 
   return {
     startIdx,
     endIdx,
-    fieldsetAbsStart: startIdx + fieldsetOpen.index,
-    fieldsetCloseAbsStart: startIdx + fieldsetCloseIdx, // where '</fieldset>' itself begins
-    fieldsetAbsEnd: startIdx + fieldsetCloseIdx + '</fieldset>'.length,
-    fieldsetInner: panelSection.slice(fieldsetOpen.index + fieldsetOpen[0].length, fieldsetCloseIdx),
+    bodyAbsStart: startIdx + bodyOpen.index,
+    bodyCloseAbsStart: startIdx + bodyCloseIdx, // where '</div>' itself begins
+    bodyAbsEnd: startIdx + bodyCloseIdx + '</div>'.length,
+    bodyInner: panelSection.slice(bodyOpen.index + bodyOpen[0].length, bodyCloseIdx),
   };
 }
 
 function appendControlToPanel(content, controlHtml) {
-  const loc = locatePanelFieldset(content);
-  return content.slice(0, loc.fieldsetCloseAbsStart) + controlHtml + '\n' + content.slice(loc.fieldsetCloseAbsStart);
+  const loc = locatePanelBody(content);
+  return content.slice(0, loc.bodyCloseAbsStart) + controlHtml + '\n' + content.slice(loc.bodyCloseAbsStart);
 }
 
-// Finds each top-level <label>...</label> block within a fieldset's inner HTML. Tuner controls
-// never nest labels (references/tuner-conventions.md: one <label> per control), so a non-greedy
-// match per block is sufficient.
-function findLabelBlocks(fieldsetInner) {
+// Finds each top-level <label>...</label> block within the panel body's inner HTML. Tuner
+// controls never nest labels (references/tuner-conventions.md: one <label> per control), so a
+// non-greedy match per block is sufficient.
+function findLabelBlocks(bodyInner) {
   const blocks = [];
   const re = /<label>[\s\S]*?<\/label>/g;
   let m;
-  while ((m = re.exec(fieldsetInner)) !== null) {
+  while ((m = re.exec(bodyInner)) !== null) {
     blocks.push({ start: m.index, end: m.index + m[0].length, text: m[0] });
   }
   return blocks;
@@ -342,26 +344,26 @@ function findControlIndexByTarget(blocks, target) {
   return blocks.findIndex((b) => b.text.includes(`data-target="${target}"`));
 }
 
-// Rebuilds the panel's <fieldset> from a fresh list of control blocks. An empty list drops the
-// entire marker-wrapped panel block (style, fieldset, script) — an empty panel isn't a valid state
-// per references/tuner-conventions.md's "always one <fieldset>" rule.
-function spliceFieldset(content, loc, controlTexts) {
+// Rebuilds the panel's <div class="tuner-panel-body"> from a fresh list of control blocks. An
+// empty list drops the entire marker-wrapped panel block (style, details, script) — an empty
+// panel isn't a valid state per references/tuner-conventions.md's "always one <details>" rule.
+function spliceBody(content, loc, controlTexts) {
   if (controlTexts.length === 0) {
     return content.slice(0, loc.startIdx) + content.slice(loc.endIdx + TUNER_PANEL_END.length);
   }
-  const newFieldset = `<fieldset class="tuner-panel" id="tunerPanel">\n  <legend>Tuners</legend>\n\n${controlTexts.join('\n\n')}\n</fieldset>`;
-  return content.slice(0, loc.fieldsetAbsStart) + newFieldset + content.slice(loc.fieldsetAbsEnd);
+  const newBody = `<div class="tuner-panel-body">\n\n${controlTexts.join('\n\n')}\n\n  </div>`;
+  return content.slice(0, loc.bodyAbsStart) + newBody + content.slice(loc.bodyAbsEnd);
 }
 
 function removeControlFromPanel(content, target) {
-  const loc = locatePanelFieldset(content);
-  const blocks = findLabelBlocks(loc.fieldsetInner);
+  const loc = locatePanelBody(content);
+  const blocks = findLabelBlocks(loc.bodyInner);
   const idx = findControlIndexByTarget(blocks, target);
   if (idx === -1) {
     throw new Error(`no control targeting "${target}" found in the existing tuner panel`);
   }
   const texts = blocks.map((b) => b.text).filter((_, i) => i !== idx);
-  return spliceFieldset(content, loc, texts);
+  return spliceBody(content, loc, texts);
 }
 
 // Replaces the control bound to opts.edit with a freshly built one from opts (a wholesale swap,
@@ -369,18 +371,18 @@ function removeControlFromPanel(content, target) {
 // replacement against the panel with the old control already removed, so reusing the same --label
 // doesn't trip the new control's own id-collision check against itself.
 function editControlInPanel(content, opts) {
-  const loc = locatePanelFieldset(content);
-  const blocks = findLabelBlocks(loc.fieldsetInner);
+  const loc = locatePanelBody(content);
+  const blocks = findLabelBlocks(loc.bodyInner);
   const idx = findControlIndexByTarget(blocks, opts.edit);
   if (idx === -1) {
     throw new Error(`no control targeting "${opts.edit}" found in the existing tuner panel`);
   }
 
   const texts = blocks.map((b) => b.text);
-  const contentWithoutOld = spliceFieldset(content, loc, texts.filter((_, i) => i !== idx));
+  const contentWithoutOld = spliceBody(content, loc, texts.filter((_, i) => i !== idx));
   const controlHtml = buildControlMarkup(opts, contentWithoutOld);
   texts[idx] = controlHtml;
-  return spliceFieldset(content, loc, texts);
+  return spliceBody(content, loc, texts);
 }
 
 // `sketch-foo.html` -> `sketch-foo-tuned.html`; already-tuned names pass through unchanged so a
@@ -401,6 +403,15 @@ function deriveReferencePath(filePath) {
   const base = path.basename(filePath, ext);
   const subject = base.endsWith('-tuned') ? base.slice(0, -'-tuned'.length) : base;
   return path.join(dir, `${subject}-reference${ext}`);
+}
+
+// A reference sketch is a frozen handoff artifact (docs/adr/0002, docs/adr/0006) — `create` writes
+// in place, so running it against one would silently resurrect dev-only blocks bake already
+// stripped. `tune`/`bake` already fork rather than mutate, so they don't need this check.
+function isReferenceFile(filePath) {
+  const ext = path.extname(filePath);
+  const base = path.basename(filePath, ext);
+  return base.endsWith('-reference');
 }
 
 // -- bake: substitute tuner values, then strip both dev-only blocks entirely ------------
@@ -475,8 +486,8 @@ function classToggleDefault(labelText, target) {
 function parsePanelControls(content) {
   if (!content.includes(TUNER_PANEL_START)) return [];
 
-  const loc = locatePanelFieldset(content);
-  const blocks = findLabelBlocks(loc.fieldsetInner);
+  const loc = locatePanelBody(content);
+  const blocks = findLabelBlocks(loc.bodyInner);
 
   return blocks.map((block) => {
     const boundTag = findBoundTag(block.text);
@@ -755,6 +766,12 @@ function runCreate(args) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`no such file: ${opts.file}`);
   }
+  if (isReferenceFile(filePath)) {
+    throw new Error(
+      `${opts.file} is a reference sketch — frozen at bake, not reopened. Fork a new exploration ` +
+        `sketch instead (SKILL.md Step 7, docs/adr/0006).`
+    );
+  }
 
   let content = fs.readFileSync(filePath, 'utf8');
   const notes = [];
@@ -902,6 +919,7 @@ module.exports = {
   editControlInPanel,
   deriveTunedPath,
   deriveReferencePath,
+  isReferenceFile,
   parsePanelControls,
   substituteRootProp,
   locateOpeningTag,

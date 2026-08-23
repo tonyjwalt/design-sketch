@@ -79,7 +79,7 @@ authored per-control
       variant), `<input type="color">` for the accent (no palette exists yet, per the input)
 - [ ] All controls use `data-bind`/`data-target` attributes; no per-control `addEventListener` was
       hand-written
-- [ ] Panel is a single `<fieldset class="tuner-panel">` block, not interleaved with sketch content
+- [ ] Panel is a single `<details class="tuner-panel">` block, not interleaved with sketch content
 - [ ] Tuned file is still one self-contained file
 
 **Fail indicators:**
@@ -129,3 +129,28 @@ naming rule (reference file is named off the original subject, not chained onto 
 - Tuner panel or ID overlay markup/script survives in the reference sketch
 - Baked values don't match where the controls were actually left
 - Original tuned sketch is overwritten instead of a new file being created
+
+---
+
+## Test S6: Feedback on a reference sketch forks a new exploration, not an in-place edit
+
+**Input:** "actually, can we make the sidebar wider" (after S5's reference sketch exists, no tuned or
+exploration file mentioned)
+
+**Validates:** ADR-0006 — a reference sketch is terminal; iteration restarts the lifecycle rather
+than reopening the handoff artifact
+
+**Pass criteria:**
+- [ ] A new file is created for the fresh exploration; the reference sketch is byte-for-byte
+      untouched
+- [ ] The new file is named descriptively per Step 4 (not `<subject>-reference-tuned.html` or
+      similar mechanical chaining)
+- [ ] The new file starts from the reference sketch's markup, not from scratch or from the earlier
+      tuned/exploration files
+- [ ] If the model reaches for `sketch-tool.js create` against the reference file by mistake, it
+      refuses with an error rather than silently reinjecting the ID overlay
+
+**Fail indicators:**
+- Reference sketch is edited in place, or regains a tuner panel / ID overlay
+- New exploration is named by mechanically appending to `-reference`
+- Model restarts from a blank sketch instead of the reference's markup

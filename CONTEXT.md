@@ -19,7 +19,8 @@ until baked.
 **Reference sketch**:
 The sketch a design converges on — tuner values baked into static CSS, tuner panel and its binding
 JS removed. Handed to production development as the source of truth for the finished design; never
-carries a live control.
+carries a live control. Terminal: further feedback forks a new exploration sketch rather than
+editing the reference in place — see ADR-0006.
 _Avoid_: spec, final sketch (spec implies formal annotation this artifact doesn't have; "final"
 doesn't capture that it's specifically meant for handoff)
 

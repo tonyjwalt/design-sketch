@@ -67,10 +67,12 @@ def test_frontmatter_has_required_fields():
     assert "description:" in front
 
 
-def test_no_version_in_frontmatter():
-    """Version lives only in kiro.json, not duplicated in frontmatter."""
+def test_version_in_frontmatter():
+    """Frontmatter carries the version under metadata (no kiro.json — this skill isn't published
+    through the agents-of-shield registry, so that convention doesn't apply here)."""
     front = read(SKILL_MD).split("---")[1]
-    assert "version" not in front
+    assert "metadata:" in front
+    assert "version:" in front
 
 
 def test_name_matches_directory():
@@ -89,16 +91,6 @@ def test_referenced_files_exist():
     assert all_refs, "expected at least one references/ or templates/ path in SKILL.md"
     missing = [r for r in all_refs if not (DIR / r).exists()]
     assert not missing, f"Missing: {missing}"
-
-
-def test_kiro_json_exists():
-    """kiro.json exists with version and dependencies."""
-    import json
-    kiro = DIR / "kiro.json"
-    assert kiro.exists()
-    data = json.loads(read(kiro))
-    assert "version" in data
-    assert "dependencies" in data
 
 
 def test_single_file_rule_stated():
@@ -169,6 +161,23 @@ def test_create_twice_does_not_duplicate_wireframe_tokens():
     assert out.count(":root") == 1
 
 
+def test_create_refuses_against_reference_sketch():
+    """`create` refuses to run against a `-reference.html` file (docs/adr/0006) — it's frozen at
+    bake, and create writes in place, so nothing else would stop it from silently resurrecting the
+    ID overlay into a handoff artifact."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sketch = Path(tmp) / "sketch-demo-reference.html"
+        sketch.write_text(FIXTURE_SKETCH)
+        result = subprocess.run(
+            ["node", str(SKETCH_TOOL), "create", str(sketch)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert "reference sketch" in result.stderr
+        assert sketch.read_text() == FIXTURE_SKETCH  # untouched
+
+
 # -- tune subcommand ---------------------------------------------------------------------
 
 
@@ -205,7 +214,8 @@ def test_tune_first_call_forks_to_tuned_file_and_leaves_exploration_untouched():
         assert "<!-- design-sketch:tuner-panel -->" in out
         assert "<!-- /design-sketch:tuner-panel -->" in out
         assert 'class="tuner-panel"' in out
-        assert out.count("<fieldset") == 1
+        assert out.count("<details") == 1
+        assert 'class="tuner-panel-body"' in out
         assert 'data-bind="css-var"' in out
         assert 'data-target="--space-md"' in out
         assert "Spacing" in out
@@ -277,7 +287,7 @@ def test_tune_class_toggle_wires_select_with_target_as_selector():
 
 def test_tune_second_call_appends_without_duplicating_panel():
     """A second `tune` call against the already-tuned file appends its control to the existing
-    panel instead of duplicating the fieldset, style, or script."""
+    panel instead of duplicating the details/summary chrome, style, or script."""
     with tempfile.TemporaryDirectory() as tmp:
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
@@ -294,7 +304,7 @@ def test_tune_second_call_appends_without_duplicating_panel():
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert out.count("<!-- design-sketch:tuner-panel -->") == 1
         assert out.count("<!-- /design-sketch:tuner-panel -->") == 1
-        assert out.count("<fieldset") == 1
+        assert out.count("<details") == 1
         assert out.count("function applyCssVar") == 1  # script not duplicated
         assert 'data-target="--space-md"' in out  # first control still present
         assert 'data-target="body"' in out  # second control appended
@@ -646,7 +656,7 @@ def test_bake_strips_tuner_panel_markup_style_and_script():
         assert "design-sketch:tuner-panel" not in out
         assert "tuner-panel" not in out
         assert "function applyCssVar" not in out
-        assert "<fieldset" not in out
+        assert "<details" not in out
 
 
 def test_bake_strips_id_overlay_markup_style_and_script():
@@ -684,16 +694,18 @@ def test_bake_class_toggle_radio_group_default_uses_checked_radio():
     radio_panel = (
         '<!-- design-sketch:tuner-panel -->\n'
         '<style>.tuner-panel{}</style>\n\n'
-        '<fieldset class="tuner-panel" id="tunerPanel">\n'
-        '  <legend>Tuners</legend>\n\n'
+        '<details class="tuner-panel" id="tunerPanel" open>\n'
+        '  <summary class="tuner-panel-header">Tuners</summary>\n'
+        '  <div class="tuner-panel-body">\n\n'
         '  <label>\n'
         '    Layout\n'
         '    <span role="radiogroup" aria-label="Layout">\n'
         '      <input type="radio" name="layout" data-bind="class-toggle" data-target="body" value="compact">\n'
         '      <input type="radio" name="layout" data-bind="class-toggle" data-target="body" value="spacious" checked>\n'
         '    </span>\n'
-        '  </label>\n'
-        '</fieldset>\n\n'
+        '  </label>\n\n'
+        '  </div>\n'
+        '</details>\n\n'
         '<script>(function () {})();</script>\n'
         '<!-- /design-sketch:tuner-panel -->\n'
     )

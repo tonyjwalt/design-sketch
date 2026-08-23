@@ -1,6 +1,8 @@
 ---
 name: design-sketch
 description: Generate lightweight single-file HTML/CSS sketches to visualize proposals and design ideas, with optional wireframe, tuner-panel, and ID-reference modes. Sketches move from disposable exploration through tuning to a baked production-reference file. Use when the user wants to sketch, visualize, draw a concept, wireframe a layout, or says "sketch this".
+metadata:
+  version: "1.0.0"
 ---
 
 # Design Sketch
@@ -21,7 +23,8 @@ sketch's own `<style>`/`<script>` — a sketch that never authored its own `<scr
 2. **Tuned** — a copy of the exploration sketch with a tuner panel added (Step 5) to hone a value or
    variant live. Becomes the live file further iteration (Step 7) continues on.
 3. **Reference** — the sketch a design converges on. Tuner values baked into static CSS, tuner panel
-   and ID overlay removed (Step 6). Handed off as the source of truth for production.
+   and ID overlay removed (Step 6). Handed off as the source of truth for production. Terminal, not
+   editable in place — further feedback forks a new exploration sketch (Step 7, `docs/adr/0006`).
 
 ## Workflow
 
@@ -59,6 +62,9 @@ rather than inferring it.
 
 ### 4. Produce the sketch
 
+Author a full HTML document from the start — `<!DOCTYPE html>`, `<html>`, `<head>`, `<body>` —
+never a bare fragment.
+
 1. **Semantic HTML** — `<main>`, `<nav>`, `<header>`, `<section>`, `<aside>` over generic divs
 2. **Semantic IDs** — meaningful IDs on elements that represent concepts, so they can be referenced
    in feedback
@@ -83,8 +89,9 @@ rather than inferring it.
    choice, merges `templates/wireframe-tokens.css`'s custom properties into the sketch's existing
    `:root` (creating one if none exists yet) without duplicating anything already there. `--type
    styled` or omitting `--type` injects the overlay only — no tokens, matching styled as the default
-   fidelity mode. Safe to re-run against the same file — neither block gets duplicated. Never run
-   against a reference sketch — both blocks are baked out in Step 6.
+   fidelity mode. Safe to re-run against the same file — neither block gets duplicated. Refuses to
+   run against a reference sketch — both blocks are baked out in Step 6, and a reference sketch is a
+   handoff artifact, not something to reopen (Step 7, `docs/adr/0006`).
 
    **If Node isn't available**, fall back to the manual procedure: load `templates/id-overlay.html`
    and inline its style+script block as one contiguous block into the sketch, wrapped in
@@ -114,7 +121,7 @@ Name files descriptively: `sketch-<subject>.html`
    control — don't edit the exploration file in place (`docs/adr/0006`); the fork keeps the clean
    version demoable and becomes the live file iteration continues on (Step 7). Run again against that
    same tuned file, it appends the new control to the existing panel instead of duplicating the
-   `<fieldset>`, style, or script. `--type css-var` takes either `--min`/`--max` (continuous, with
+   `<details>` chrome, style, or script. `--type css-var` takes either `--min`/`--max` (continuous, with
    optional `--value`/`--unit`) or `--options` (swatch buttons) — never both. `--type class-toggle`
    takes `--options` (variant names for a `<select>`) and treats `--target` as a CSS **selector**, not
    a custom property name. `--readout` wires a continuous control's live numeric readout
@@ -193,6 +200,13 @@ This moves the sketch from tuned to **reference** (`docs/adr/0002`).
 
 User reacts. Use the effort ladder again (ask → ASCII) to resolve what changed, then update the
 current live file — the tuned sketch once one exists (Step 5), otherwise the exploration sketch.
+
+**If the current live file is a reference sketch**, don't edit it in place. Baking closed the design
+question (`docs/adr/0002`); a reference sketch is a handoff artifact, not a working file. Instead,
+fork a new exploration sketch seeded from the reference's markup and restart the lifecycle at Step 1
+— name it descriptively per Step 4, same as any new sketch (don't mechanically chain onto
+`-reference`; scope may have shifted enough that a fresh subject name fits better). `sketch-tool.js
+create` refuses to run against a `-reference.html` file for the same reason (`docs/adr/0006`).
 
 ## Files
 
