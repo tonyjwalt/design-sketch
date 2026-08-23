@@ -41,6 +41,14 @@ function usage() {
     '  tune <file> --edit <old-target> --type ... --target ... --label ... [...]',
     '      Replaces the control bound to <old-target> with a freshly built one from the given',
     '      flags (same flags as creating a control) — a wholesale swap, not a partial patch.',
+    '',
+    '  bake <tuned-file> [--values \'<json>\']',
+    '      Forks to <subject>-reference.html (anchored to the original subject, never chained onto',
+    '      "-tuned"). --values is a sparse override map keyed by each control\'s data-target: css-var',
+    '      entries substitute a static value into :root; class-toggle entries hardcode a class onto',
+    '      the target element. Any control left out of --values bakes in at its authored default —',
+    '      a css-var\'s current :root value, or a class-toggle\'s selected option / checked radio.',
+    '      Deletes the tuner-panel and id-overlay blocks (markup, style, and script) entirely.',
   ].join('\n');
 }
 
@@ -156,6 +164,10 @@ function mergeWireframeTokens(content) {
 
 function escapeAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function escapeText(s) {
@@ -381,6 +393,187 @@ function deriveTunedPath(filePath) {
   return path.join(dir, `${tunedBase}${ext}`);
 }
 
+// `sketch-foo-tuned.html` -> `sketch-foo-reference.html` — anchored to the original subject, never
+// chained onto the tuned filename (`-tuned-reference` reads worse and gets longer every bake).
+function deriveReferencePath(filePath) {
+  const dir = path.dirname(filePath);
+  const ext = path.extname(filePath);
+  const base = path.basename(filePath, ext);
+  const subject = base.endsWith('-tuned') ? base.slice(0, -'-tuned'.length) : base;
+  return path.join(dir, `${subject}-reference${ext}`);
+}
+
+// -- bake: substitute tuner values, then strip both dev-only blocks entirely ------------
+
+// Deletes a marker-wrapped block (start marker through end marker, inclusive). A no-op if the
+// start marker isn't present — bake is valid against a file that never had this block.
+function stripBlock(content, startMarker, endMarker) {
+  const startIdx = content.indexOf(startMarker);
+  if (startIdx === -1) return content;
+  const endIdx = content.indexOf(endMarker);
+  if (endIdx === -1) throw new Error(`found ${startMarker} without a matching ${endMarker}`);
+  return content.slice(0, startIdx) + content.slice(endIdx + endMarker.length);
+}
+
+function extractAttr(tagText, attrName) {
+  const m = new RegExp(attrName + '="([^"]*)"').exec(tagText);
+  return m ? m[1] : null;
+}
+
+// Finds the first tag inside a control's <label> block that carries data-bind — the element whose
+// data-target/data-bind/data-prefix define the control (a swatch row has several buttons bound to
+// the same target, so "first" is sufficient; they agree by construction).
+function findBoundTag(labelText) {
+  const m = /<[a-zA-Z][^>]*\bdata-bind="(css-var|class-toggle)"[^>]*>/.exec(labelText);
+  return m ? m[0] : null;
+}
+
+// Reads a class-toggle control's currently-authored default straight from its markup: the
+// selected <option> (or its first option, absent an explicit `selected`), the checked radio in a
+// group, or a checkbox's checked state. Returns null only for an unchecked checkbox — "no class"
+// is itself a valid authored default there.
+function classToggleDefault(labelText, target) {
+  if (/<select\b/.test(labelText)) {
+    let firstValue = null;
+    const optRe = /<option\b[^>]*>/g;
+    let m;
+    while ((m = optRe.exec(labelText)) !== null) {
+      const value = extractAttr(m[0], 'value');
+      if (firstValue === null) firstValue = value;
+      if (/\bselected\b/.test(m[0])) return value;
+    }
+    if (firstValue === null) {
+      throw new Error(`class-toggle control targeting "${target}" has a <select> with no <option>`);
+    }
+    return firstValue;
+  }
+
+  if (/\btype="radio"/.test(labelText)) {
+    const radioRe = /<input\b[^>]*\btype="radio"[^>]*>/g;
+    let m;
+    while ((m = radioRe.exec(labelText)) !== null) {
+      if (/\bchecked\b/.test(m[0])) return extractAttr(m[0], 'value');
+    }
+    throw new Error(
+      `class-toggle control targeting "${target}" is a radio group with none marked "checked"`
+    );
+  }
+
+  const checkboxMatch = /<input\b[^>]*\btype="checkbox"[^>]*>/.exec(labelText);
+  if (checkboxMatch) {
+    if (!/\bchecked\b/.test(checkboxMatch[0])) return null;
+    return extractAttr(checkboxMatch[0], 'value') || '';
+  }
+
+  throw new Error(
+    `class-toggle control targeting "${target}" has no recognized markup (expected <select>, a radio group, or a checkbox)`
+  );
+}
+
+// Reads every control out of an existing tuner panel. Returns [] if the file never had one — bake
+// against a file with no panel is valid (nothing to substitute, blocks are still stripped).
+function parsePanelControls(content) {
+  if (!content.includes(TUNER_PANEL_START)) return [];
+
+  const loc = locatePanelFieldset(content);
+  const blocks = findLabelBlocks(loc.fieldsetInner);
+
+  return blocks.map((block) => {
+    const boundTag = findBoundTag(block.text);
+    if (!boundTag) throw new Error('a tuner control has no element carrying data-bind — malformed panel markup');
+
+    const bind = extractAttr(boundTag, 'data-bind');
+    const target = extractAttr(boundTag, 'data-target');
+    if (!target) throw new Error('a tuner control is missing data-target — malformed panel markup');
+
+    const control = { bind, target };
+    if (bind === 'class-toggle') {
+      control.prefix = extractAttr(boundTag, 'data-prefix') || '';
+      control.defaultValue = classToggleDefault(block.text, target);
+    }
+    return control;
+  });
+}
+
+// Substitutes a css-var control's `:root` declaration with a plain static value.
+function substituteRootProp(content, propName, rawValue) {
+  const root = findRootBlock(content);
+  if (!root) throw new Error(`no :root block found to bake "${propName}" into`);
+
+  const declRe = new RegExp('([ \\t]*' + escapeRegExp(propName) + '\\s*:\\s*)[^;]+(;)');
+  if (!declRe.test(root.inner)) {
+    throw new Error(`custom property "${propName}" is not declared in :root — nothing to bake it into`);
+  }
+  const newInner = root.inner.replace(declRe, `$1${rawValue}$2`);
+  return content.slice(0, root.openBrace + 1) + newInner + content.slice(root.closeBrace);
+}
+
+// Finds the opening tag of the element a class-toggle control's `data-target` selector names.
+// Bake only needs to resolve the simple selector shapes the conventions doc actually recommends
+// (references/tuner-conventions.md: "often body, or an id/class the sketch already has").
+function locateOpeningTag(content, selector) {
+  let re;
+  if (selector === 'body') {
+    re = /<body\b[^>]*>/i;
+  } else if (selector.startsWith('#')) {
+    re = new RegExp('<[a-zA-Z][^>]*\\bid="' + escapeRegExp(selector.slice(1)) + '"[^>]*>');
+  } else if (selector.startsWith('.')) {
+    re = new RegExp('<[a-zA-Z][^>]*\\bclass="[^"]*\\b' + escapeRegExp(selector.slice(1)) + '\\b[^"]*"[^>]*>');
+  } else if (/^[a-zA-Z][a-zA-Z0-9]*$/.test(selector)) {
+    re = new RegExp('<' + selector + '\\b[^>]*>', 'i');
+  } else {
+    throw new Error(
+      `bake only supports simple class-toggle selectors (a tag name, #id, or .class) — got "${selector}"`
+    );
+  }
+
+  const m = re.exec(content);
+  if (!m) throw new Error(`no element matching selector "${selector}" found to bake a class onto`);
+  return { start: m.index, end: m.index + m[0].length, text: m[0] };
+}
+
+function addClassToTag(tagText, className) {
+  const classAttrRe = /\sclass="([^"]*)"/;
+  const m = classAttrRe.exec(tagText);
+  if (m) {
+    const existing = m[1].split(/\s+/).filter(Boolean);
+    if (existing.includes(className)) return tagText;
+    const updated = existing.concat(className).join(' ');
+    return tagText.slice(0, m.index) + ` class="${updated}"` + tagText.slice(m.index + m[0].length);
+  }
+
+  const tagNameMatch = /^<[a-zA-Z0-9]+/.exec(tagText);
+  const insertAt = tagNameMatch[0].length;
+  return tagText.slice(0, insertAt) + ` class="${className}"` + tagText.slice(insertAt);
+}
+
+function bakeCssVarControls(content, controls, values) {
+  controls
+    .filter((c) => c.bind === 'css-var')
+    .forEach((c) => {
+      if (Object.prototype.hasOwnProperty.call(values, c.target)) {
+        content = substituteRootProp(content, c.target, values[c.target]);
+      }
+      // else: already the authored default sitting in :root, nothing to change.
+    });
+  return content;
+}
+
+function bakeClassToggleControls(content, controls, values) {
+  controls
+    .filter((c) => c.bind === 'class-toggle')
+    .forEach((c) => {
+      const rawValue = Object.prototype.hasOwnProperty.call(values, c.target) ? values[c.target] : c.defaultValue;
+      if (rawValue === null || rawValue === undefined) return; // unchecked checkbox: no class to bake
+
+      const className = c.prefix + String(rawValue);
+      const tagLoc = locateOpeningTag(content, c.target);
+      const newTag = addClassToTag(tagLoc.text, className);
+      content = content.slice(0, tagLoc.start) + newTag + content.slice(tagLoc.end);
+    });
+  return content;
+}
+
 // -- arg parsing -----------------------------------------------------------------------
 
 function parseCreateArgs(args) {
@@ -520,6 +713,40 @@ function validateTuneOpts(opts) {
   }
 }
 
+function parseValuesJson(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`--values must be valid JSON: ${err.message}`);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('--values must be a JSON object mapping each control\'s data-target to an override value');
+  }
+  return parsed;
+}
+
+function parseBakeArgs(args) {
+  const opts = { file: null, values: {} };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--values') {
+      opts.values = parseValuesJson(args[++i]);
+    } else if (arg.startsWith('--values=')) {
+      opts.values = parseValuesJson(arg.slice('--values='.length));
+    } else if (arg.startsWith('--')) {
+      throw new Error(`unknown option: ${arg}`);
+    } else if (opts.file === null) {
+      opts.file = arg;
+    } else {
+      throw new Error(`unexpected argument: ${arg}`);
+    }
+  }
+
+  if (!opts.file) throw new Error('missing required <tuned-file> argument');
+  return opts;
+}
+
 // -- subcommands -----------------------------------------------------------------------
 
 function runCreate(args) {
@@ -599,6 +826,33 @@ function runTune(args) {
   );
 }
 
+function runBake(args) {
+  const opts = parseBakeArgs(args);
+  const filePath = path.resolve(opts.file);
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`no such file: ${opts.file}`);
+  }
+
+  let content = fs.readFileSync(filePath, 'utf8');
+
+  const controls = parsePanelControls(content);
+  const validTargets = new Set(controls.map((c) => c.target));
+  Object.keys(opts.values).forEach((key) => {
+    if (!validTargets.has(key)) {
+      throw new Error(`--values names "${key}" but no tuner control in ${opts.file} targets it`);
+    }
+  });
+
+  content = bakeCssVarControls(content, controls, opts.values);
+  content = bakeClassToggleControls(content, controls, opts.values);
+  content = stripBlock(content, TUNER_PANEL_START, TUNER_PANEL_END);
+  content = stripBlock(content, ID_OVERLAY_START, ID_OVERLAY_END);
+
+  const targetPath = deriveReferencePath(filePath);
+  fs.writeFileSync(targetPath, content, 'utf8');
+  console.log(`sketch-tool: baked ${opts.file} -> ${path.relative(process.cwd(), targetPath)}`);
+}
+
 function main(argv) {
   const [subcommand, ...rest] = argv;
 
@@ -614,6 +868,11 @@ function main(argv) {
 
   if (subcommand === 'tune') {
     runTune(rest);
+    return;
+  }
+
+  if (subcommand === 'bake') {
+    runBake(rest);
     return;
   }
 
@@ -642,4 +901,10 @@ module.exports = {
   removeControlFromPanel,
   editControlInPanel,
   deriveTunedPath,
+  deriveReferencePath,
+  parsePanelControls,
+  substituteRootProp,
+  locateOpeningTag,
+  addClassToTag,
+  stripBlock,
 };

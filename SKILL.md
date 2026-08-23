@@ -151,16 +151,41 @@ This moves the sketch from exploration to **tuned**.
 
 ### 6. Bake — only when asked
 
-1. Read the current value of each tuner control
-2. For a `css-var` tuner, replace the CSS custom property's `:root` declaration with its current
-   value, as a plain static value
-3. For a `class-toggle` tuner, hardcode the current class directly onto the target element in the
-   markup and leave the class-gated CSS rule as-is — don't flatten the rule into the base ruleset
-4. Delete the tuner panel block and the ID overlay block entirely (markup, style, and script for
-   both)
-5. Save as a new file named `<subject>-reference.html` — anchored to the original subject, not
-   chained onto the tuned file's name (`-tuned-reference` reads worse). Don't overwrite the tuned
-   sketch, so the tuning history survives
+1. **Ask before assuming nothing changed.** A tuner's *current* value only exists in live browser
+   DOM state — the static file's `value`/`selected` attributes are its authored defaults, not
+   necessarily where the human left it. Before calling the tool, ask: "baking at current defaults,
+   or did you land on something different for any of these?" Passing an empty/sparse `--values`
+   is only safe once the human has confirmed which controls (if any) moved — never assume silently.
+2. Run:
+
+   ```
+   node tools/sketch-tool.js bake <tuned-file> [--values '<json>']
+   ```
+
+   Forks to `<subject>-reference.html` — anchored to the original subject, not chained onto the
+   tuned file's name (`-tuned-reference` reads worse). Never overwrites the tuned sketch, so the
+   tuning history survives. `--values` is optional and sparse: a JSON object keyed by each moved
+   control's `data-target`, holding only the controls the human said changed. For a `css-var`
+   control, the value is substituted into `:root` as a plain static value. For a `class-toggle`
+   control, the value is hardcoded onto the target element in markup — the class-gated CSS rule is
+   left as-is, not flattened into the base ruleset. Every control *not* named in `--values` bakes in
+   at its authored default: a `css-var` control keeps its property's current `:root` value
+   unchanged; a `class-toggle` control uses whichever option is marked `selected` (or radio marked
+   `checked`) in its own markup. Deletes the tuner-panel and ID-overlay blocks entirely (markup,
+   style, and script for both).
+
+   **If Node isn't available**, fall back to the manual procedure:
+   1. Read the current value of each tuner control (ask the human, per step 1 above)
+   2. For a `css-var` tuner, replace the CSS custom property's `:root` declaration with its current
+      value, as a plain static value
+   3. For a `class-toggle` tuner, hardcode the current class directly onto the target element in the
+      markup and leave the class-gated CSS rule as-is — don't flatten the rule into the base
+      ruleset
+   4. Delete the tuner panel block and the ID overlay block entirely (markup, style, and script for
+      both)
+   5. Save as a new file named `<subject>-reference.html` — anchored to the original subject, not
+      chained onto the tuned file's name. Don't overwrite the tuned sketch, so the tuning history
+      survives
 
 This moves the sketch from tuned to **reference** (`docs/adr/0002`).
 
@@ -175,6 +200,6 @@ current live file — the tuned sketch once one exists (Step 5), otherwise the e
 |------|-------------|
 | `templates/wireframe-tokens.css` | Step 3, wireframe mode |
 | `templates/id-overlay.html` | Step 4, every exploration/tuned sketch (default) |
-| `tools/sketch-tool.js` | Step 4.9, mechanizes overlay + wireframe-token injection; Step 5, mechanizes tuner-panel fork/inject/append (Node) |
+| `tools/sketch-tool.js` | Step 4.9, mechanizes overlay + wireframe-token injection; Step 5, mechanizes tuner-panel fork/inject/append; Step 6, mechanizes bake's fork-substitute-strip (Node) |
 | `references/tuner-conventions.md` | Step 5, before adding a tuner panel |
 | `templates/tuner-panel.html` | Step 5, adding tuners |

@@ -511,6 +511,242 @@ def test_tune_remove_rejects_control_definition_flags():
         assert result.returncode != 0
 
 
+# -- bake subcommand ----------------------------------------------------------------------
+
+
+BAKE_FIXTURE = """<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --space-md: 16px;
+    --accent-color: #3366ff;
+  }
+  body { font-family: sans-serif; }
+</style>
+</head>
+<body>
+<main id="content">Hello</main>
+</body>
+</html>
+"""
+
+
+def run_bake(tmp, filename, args, check=True):
+    """Runs `sketch-tool bake` against `tmp/filename` and returns the CompletedProcess."""
+    result = subprocess.run(
+        ["node", str(SKETCH_TOOL), "bake", str(Path(tmp) / filename), *args],
+        capture_output=True,
+        text=True,
+    )
+    if check:
+        assert result.returncode == 0, result.stderr
+    return result
+
+
+def make_bake_ready_tuned_file(tmp):
+    """Sets up sketch-demo-tuned.html with a Spacing (css-var, --space-md) and a Layout
+    (class-toggle, body) control, against a :root that already declares --space-md so css-var
+    override tests have something real to substitute into."""
+    (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
+    run_tune(
+        tmp, "sketch-demo.html",
+        ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+    )
+    run_tune(
+        tmp, "sketch-demo-tuned.html",
+        ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
+    )
+
+
+def test_bake_writes_reference_file_anchored_to_subject_not_chained_on_tuned():
+    """`bake` writes `<subject>-reference.html`, not `<subject>-tuned-reference.html`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_bake_ready_tuned_file(tmp)
+        run_bake(tmp, "sketch-demo-tuned.html", [])
+        assert (Path(tmp) / "sketch-demo-reference.html").exists()
+        assert not (Path(tmp) / "sketch-demo-tuned-reference.html").exists()
+
+
+def test_bake_does_not_overwrite_tuned_file():
+    """The tuned file is left byte-for-byte untouched after baking."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_bake_ready_tuned_file(tmp)
+        before = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        run_bake(tmp, "sketch-demo-tuned.html", [])
+        after = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert before == after
+
+
+def test_bake_css_var_override_substitutes_root_declaration():
+    """A css-var entry in `--values` replaces the `:root` declaration with a static value."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_bake_ready_tuned_file(tmp)
+        run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"--space-md": "40px"}'])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert "--space-md: 40px;" in out
+        assert "--space-md: 16px;" not in out
+
+
+def test_bake_class_toggle_override_hardcodes_class_on_target():
+    """A class-toggle entry in `--values` hardcodes the class onto the target element, leaving the
+    class-gated CSS rule (there isn't one in this fixture, but the selector's own markup) alone."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_bake_ready_tuned_file(tmp)
+        run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"body": "spacious"}'])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert '<body class="spacious">' in out
+
+
+def test_bake_sparse_values_only_overrides_named_controls():
+    """A `--values` map naming only one of two controls overrides that one and defaults the other."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_bake_ready_tuned_file(tmp)
+        run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"--space-md": "40px"}'])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert "--space-md: 40px;" in out
+        assert '<body class="compact">' in out  # first --options value, the select's default
+
+
+def test_bake_no_values_flag_bakes_every_control_at_its_authored_default():
+    """`bake <tuned-file>` with no `--values` flag at all is valid: every control bakes at its
+    currently authored default."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_bake_ready_tuned_file(tmp)
+        run_bake(tmp, "sketch-demo-tuned.html", [])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert "--space-md: 16px;" in out  # untouched authored default
+        assert '<body class="compact">' in out  # select's default option
+
+
+def test_bake_class_toggle_default_uses_selected_option_not_first():
+    """A class-toggle control's default follows whichever `<option>` is marked `selected`, even
+    when that isn't the first option — not baked's own separate notion of "default"."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
+        run_tune(
+            tmp, "sketch-demo.html",
+            [
+                "--type", "class-toggle", "--target", "body", "--label", "Layout",
+                "--options", "compact,spacious", "--value", "spacious",
+            ],
+        )
+        run_bake(tmp, "sketch-demo-tuned.html", [])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert '<body class="spacious">' in out
+
+
+def test_bake_strips_tuner_panel_markup_style_and_script():
+    """Output file has the tuner-panel block (markup, style, and script) entirely absent."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_bake_ready_tuned_file(tmp)
+        run_bake(tmp, "sketch-demo-tuned.html", [])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert "design-sketch:tuner-panel" not in out
+        assert "tuner-panel" not in out
+        assert "function applyCssVar" not in out
+        assert "<fieldset" not in out
+
+
+def test_bake_strips_id_overlay_markup_style_and_script():
+    """Output file has the id-overlay block (markup, style, and script) entirely absent."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
+        subprocess.run(
+            ["node", str(SKETCH_TOOL), "create", str(Path(tmp) / "sketch-demo.html")],
+            check=True, capture_output=True, text=True,
+        )
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+        run_bake(tmp, "sketch-demo-tuned.html", [])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert "design-sketch:id-overlay" not in out
+        assert "id-badge" not in out
+
+
+def test_bake_no_panel_or_overlay_still_produces_a_reference_file():
+    """Baking a file that never got tuners or an overlay is valid — nothing to strip or substitute,
+    a reference file still comes out anchored to the subject."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
+        run_bake(tmp, "sketch-demo.html", [])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert "tuner-panel" not in out
+        assert "id-overlay" not in out
+
+
+def test_bake_class_toggle_radio_group_default_uses_checked_radio():
+    """A hand-authored radio-group class-toggle control (references/tuner-conventions.md's
+    select-or-radio option) bakes in whichever radio is marked `checked`."""
+    radio_panel = (
+        '<!-- design-sketch:tuner-panel -->\n'
+        '<style>.tuner-panel{}</style>\n\n'
+        '<fieldset class="tuner-panel" id="tunerPanel">\n'
+        '  <legend>Tuners</legend>\n\n'
+        '  <label>\n'
+        '    Layout\n'
+        '    <span role="radiogroup" aria-label="Layout">\n'
+        '      <input type="radio" name="layout" data-bind="class-toggle" data-target="body" value="compact">\n'
+        '      <input type="radio" name="layout" data-bind="class-toggle" data-target="body" value="spacious" checked>\n'
+        '    </span>\n'
+        '  </label>\n'
+        '</fieldset>\n\n'
+        '<script>(function () {})();</script>\n'
+        '<!-- /design-sketch:tuner-panel -->\n'
+    )
+    html = BAKE_FIXTURE.replace("</body>", radio_panel + "</body>")
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo-tuned.html").write_text(html)
+        run_bake(tmp, "sketch-demo-tuned.html", [])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert '<body class="spacious">' in out
+        assert "tuner-panel" not in out
+
+
+def test_bake_values_unknown_target_errors():
+    """`--values` naming a target no control in the panel actually uses fails clearly, instead of
+    silently doing nothing — bake is supposed to catch exactly this kind of typo."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_bake_ready_tuned_file(tmp)
+        result = run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"--nonexistent": "1"}'], check=False)
+        assert result.returncode != 0
+        assert "--nonexistent" in result.stderr
+
+
+def test_bake_css_var_override_of_undeclared_property_errors():
+    """Overriding a css-var control whose custom property was never declared in `:root` fails
+    clearly rather than silently writing nothing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)  # only declares --demo-color
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+        result = run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"--space-md": "40px"}'], check=False)
+        assert result.returncode != 0
+        assert "--space-md" in result.stderr
+
+
+def test_bake_missing_file_errors():
+    """`bake` against a file that doesn't exist fails clearly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result = run_bake(tmp, "nope.html", [], check=False)
+        assert result.returncode != 0
+        assert "no such file" in result.stderr
+
+
+def test_bake_invalid_values_json_errors():
+    """`--values` that isn't valid JSON fails clearly instead of throwing an obscure parse error."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_bake_ready_tuned_file(tmp)
+        result = run_bake(tmp, "sketch-demo-tuned.html", ["--values", "{not json"], check=False)
+        assert result.returncode != 0
+        assert "--values" in result.stderr
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = failed = 0
