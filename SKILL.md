@@ -52,10 +52,10 @@ rather than inferring it.
 ### 3. Pick a fidelity mode
 
 - **Styled** (default) — realistic content, real color decisions.
-- **Wireframe** — layout/proportion matters more than visual polish. Load
-  `templates/wireframe-tokens.css` and inline its custom properties into the sketch's `:root`.
-  Always the skill's own shipped scale — never inspect the target project for its own tokens
-  (`docs/adr/0003`).
+- **Wireframe** — layout/proportion matters more than visual polish. Always the skill's own shipped
+  scale (`templates/wireframe-tokens.css`) — never inspect the target project for its own tokens
+  (`docs/adr/0003`). The custom properties get merged into the sketch's `:root` at Step 4.9, via
+  `sketch-tool create --type wireframe`.
 
 ### 4. Produce the sketch
 
@@ -71,9 +71,29 @@ rather than inferring it.
    merge their rules into this one.
 7. **No frameworks or external dependencies** — no Tailwind, Bootstrap, CDN links
 8. **Self-contained single file** — one `.html` file, no separate assets, at every lifecycle stage
-9. **ID overlay by default** — load `templates/id-overlay.html` and inline its style+script block
-   into every exploration or tuned sketch, unless told not to (`docs/adr/0004`). Never in a
-   reference sketch — baked out in Step 6.
+9. **ID overlay by default, plus wireframe tokens if Step 3 chose wireframe** — once the sketch's
+   own markup and `<style>` exist, run:
+
+   ```
+   node tools/sketch-tool.js create <file> [--type wireframe|styled] [--no-overlay]
+   ```
+
+   This injects the `templates/id-overlay.html` style+script block as one contiguous block, unless
+   told not to (`docs/adr/0004` — use `--no-overlay`), and, when `--type wireframe` matches Step 3's
+   choice, merges `templates/wireframe-tokens.css`'s custom properties into the sketch's existing
+   `:root` (creating one if none exists yet) without duplicating anything already there. `--type
+   styled` or omitting `--type` injects the overlay only — no tokens, matching styled as the default
+   fidelity mode. Safe to re-run against the same file — neither block gets duplicated. Never run
+   against a reference sketch — both blocks are baked out in Step 6.
+
+   **If Node isn't available**, fall back to the manual procedure: load `templates/id-overlay.html`
+   and inline its style+script block as one contiguous block into the sketch, wrapped in
+   `<!-- design-sketch:id-overlay -->` / `<!-- /design-sketch:id-overlay -->` comments — the same
+   markers `sketch-tool create` writes and checks for, so a later tool invocation against this file
+   recognizes the overlay is already there instead of duplicating it. Unless told not to. For
+   wireframe mode, load `templates/wireframe-tokens.css` and inline its custom properties into the
+   sketch's `:root` (merging by hand into an existing `:root` if one is already there, not
+   duplicating declarations).
 
 Name files descriptively: `sketch-<subject>.html`
 
@@ -121,5 +141,6 @@ current live file — the tuned sketch once one exists (Step 5), otherwise the e
 |------|-------------|
 | `templates/wireframe-tokens.css` | Step 3, wireframe mode |
 | `templates/id-overlay.html` | Step 4, every exploration/tuned sketch (default) |
+| `tools/sketch-tool.js` | Step 4.9, mechanizes overlay + wireframe-token injection (Node) |
 | `references/tuner-conventions.md` | Step 5, before adding a tuner panel |
 | `templates/tuner-panel.html` | Step 5, adding tuners |
