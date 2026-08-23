@@ -169,6 +169,182 @@ def test_create_twice_does_not_duplicate_wireframe_tokens():
     assert out.count(":root") == 1
 
 
+# -- tune subcommand ---------------------------------------------------------------------
+
+
+def run_tune(tmp, filename, args, check=True):
+    """Runs `sketch-tool tune` against `tmp/filename` and returns the CompletedProcess."""
+    result = subprocess.run(
+        ["node", str(SKETCH_TOOL), "tune", str(Path(tmp) / filename), *args],
+        capture_output=True,
+        text=True,
+    )
+    if check:
+        assert result.returncode == 0, result.stderr
+    return result
+
+
+def test_tune_first_call_forks_to_tuned_file_and_leaves_exploration_untouched():
+    """`tune` against an exploration sketch forks a `<subject>-tuned.html` copy and injects a
+    working tuner panel, without touching the original file."""
+    with tempfile.TemporaryDirectory() as tmp:
+        exploration = Path(tmp) / "sketch-demo.html"
+        exploration.write_text(FIXTURE_SKETCH)
+
+        run_tune(
+            tmp,
+            "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+
+        assert exploration.read_text() == FIXTURE_SKETCH  # exploration sketch untouched
+
+        tuned = Path(tmp) / "sketch-demo-tuned.html"
+        assert tuned.exists()
+        out = tuned.read_text()
+        assert "<!-- design-sketch:tuner-panel -->" in out
+        assert "<!-- /design-sketch:tuner-panel -->" in out
+        assert 'class="tuner-panel"' in out
+        assert out.count("<fieldset") == 1
+        assert 'data-bind="css-var"' in out
+        assert 'data-target="--space-md"' in out
+        assert "Spacing" in out
+        assert "function applyCssVar" in out  # generic listener script came along
+
+
+def test_tune_continuous_control_wires_min_max_value_unit():
+    """A continuous css-var control carries --min/--max/--value/--unit through to the input."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp,
+            "sketch-demo.html",
+            [
+                "--type", "css-var", "--target", "--space-md", "--label", "Spacing",
+                "--min", "4", "--max", "64", "--value", "20", "--unit", "rem",
+            ],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'type="range"' in out
+        assert 'min="4"' in out and 'max="64"' in out and 'value="20"' in out
+        assert 'data-unit="rem"' in out
+
+
+def test_tune_readout_wires_data_readout_and_output():
+    """`--readout` adds a `data-readout` attribute plus a matching `<output>` element."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp,
+            "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64", "--readout"],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'data-readout="spacingOut"' in out
+        assert '<output id="spacingOut"' in out
+
+
+def test_tune_swatch_control_wires_one_button_per_option():
+    """`--type css-var --options a,b` wires a swatch row with one button per color."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp,
+            "sketch-demo.html",
+            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--options", "#3366ff,#e0403f"],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert out.count("<button") == 2
+        assert 'value="#3366ff"' in out and 'value="#e0403f"' in out
+        assert 'class="swatch-row"' in out
+
+
+def test_tune_class_toggle_wires_select_with_target_as_selector():
+    """`--type class-toggle` builds a `<select>` and treats --target as a CSS selector."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp,
+            "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'data-bind="class-toggle"' in out
+        assert 'data-target="body"' in out
+        assert out.count("<option") == 2
+        assert "Compact" in out and "Spacious" in out
+
+
+def test_tune_second_call_appends_without_duplicating_panel():
+    """A second `tune` call against the already-tuned file appends its control to the existing
+    panel instead of duplicating the fieldset, style, or script."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp,
+            "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+        run_tune(
+            tmp,
+            "sketch-demo-tuned.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
+        )
+
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert out.count("<!-- design-sketch:tuner-panel -->") == 1
+        assert out.count("<!-- /design-sketch:tuner-panel -->") == 1
+        assert out.count("<fieldset") == 1
+        assert out.count("function applyCssVar") == 1  # script not duplicated
+        assert 'data-target="--space-md"' in out  # first control still present
+        assert 'data-target="body"' in out  # second control appended
+
+
+def test_tune_fork_target_already_existing_errors_instead_of_overwriting():
+    """Calling `tune` twice against the exploration file (instead of the tuned file the second
+    time) refuses to clobber the already-tuned file."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp,
+            "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+        result = run_tune(
+            tmp,
+            "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "already exists" in result.stderr
+
+
+def test_tune_css_var_requires_min_max_or_options():
+    """`--type css-var` without --min/--max or --options fails with a clear error."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--min/--max" in result.stderr or "--options" in result.stderr
+
+
+def test_tune_class_toggle_rejects_min_max():
+    """`--type class-toggle` combined with --min/--max fails — those only apply to css-var."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "a,b", "--min", "0"],
+            check=False,
+        )
+        assert result.returncode != 0
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = failed = 0

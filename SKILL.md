@@ -99,19 +99,39 @@ Name files descriptively: `sketch-<subject>.html`
 
 ### 5. Add tuners — only when asked
 
-1. Copy the exploration sketch to `<subject>-tuned.html` first — don't edit the exploration file in
-   place. This keeps the clean version demoable and gives you a safe fallback if the tuner edit goes
-   wrong; the copy becomes the live file iteration continues on (Step 7)
-2. Load `references/tuner-conventions.md` for the element-per-value-type mapping
-3. Load `templates/tuner-panel.html` and inline its markup, style, and script as one block
-4. Bind controls only via the `data-bind`/`data-target` attributes the template defines — never
-   author one-off JS per control. `data-target` means different things depending on `data-bind`:
-   a CSS custom property name for `css-var`, a CSS selector for `class-toggle` — see
-   `templates/tuner-panel.html`'s own examples of both before wiring a new control.
-5. Give a continuous control a readout via `data-readout="someId"` (bare id, no `#`) plus a matching
-   `<output id="someId">` — the template's generic listener updates it via `getElementById`; don't
-   hand-write a readout binding
-6. What gets tuned is a per-sketch human decision; don't infer it
+1. Load `references/tuner-conventions.md` for the element-per-value-type mapping — this decides
+   `--type` and whether a `css-var` control is continuous or a swatch; what gets tuned is a
+   per-sketch human decision, don't infer it
+2. Run:
+
+   ```
+   node tools/sketch-tool.js tune <file> --type css-var|class-toggle --target <name-or-selector> \
+     --label <text> [--options a,b,c] [--min N --max N] [--value V] [--unit STR] [--readout] [--prefix STR]
+   ```
+
+   The command is smart about `<file>`'s state: run against the exploration sketch (no panel yet),
+   it forks a copy to `<subject>-tuned.html` and injects a working tuner-panel skeleton with this one
+   control — don't edit the exploration file in place (`docs/adr/0006`); the fork keeps the clean
+   version demoable and becomes the live file iteration continues on (Step 7). Run again against that
+   same tuned file, it appends the new control to the existing panel instead of duplicating the
+   `<fieldset>`, style, or script. `--type css-var` takes either `--min`/`--max` (continuous, with
+   optional `--value`/`--unit`) or `--options` (swatch buttons) — never both. `--type class-toggle`
+   takes `--options` (variant names for a `<select>`) and treats `--target` as a CSS **selector**, not
+   a custom property name. `--readout` wires a continuous control's live numeric readout
+   (`data-readout` plus a matching `<output>`) automatically — never hand-write that binding.
+   Controls are bound only via the `data-bind`/`data-target` attributes the template defines; see
+   `templates/tuner-panel.html`'s own examples of both bind types before wiring one by hand.
+
+   **If Node isn't available**, fall back to the manual procedure: copy the exploration sketch to
+   `<subject>-tuned.html` first (don't edit the exploration file in place). Load
+   `templates/tuner-panel.html` and inline its markup, style, and script as one contiguous block,
+   wrapped in `<!-- design-sketch:tuner-panel -->` / `<!-- /design-sketch:tuner-panel -->` comments —
+   the same markers `sketch-tool tune` writes and checks for, so a later tool invocation against this
+   file recognizes the panel is already there and appends instead of duplicating it. Bind each control
+   by hand via `data-bind`/`data-target` only, remembering `data-target` means different things per
+   `data-bind` (a CSS custom property name for `css-var`, a CSS selector for `class-toggle`), and wire
+   a continuous control's readout via `data-readout="someId"` (bare id, no `#`) plus a matching
+   `<output id="someId">` rather than hand-writing a readout binding.
 
 This moves the sketch from exploration to **tuned**.
 
@@ -141,6 +161,6 @@ current live file — the tuned sketch once one exists (Step 5), otherwise the e
 |------|-------------|
 | `templates/wireframe-tokens.css` | Step 3, wireframe mode |
 | `templates/id-overlay.html` | Step 4, every exploration/tuned sketch (default) |
-| `tools/sketch-tool.js` | Step 4.9, mechanizes overlay + wireframe-token injection (Node) |
+| `tools/sketch-tool.js` | Step 4.9, mechanizes overlay + wireframe-token injection; Step 5, mechanizes tuner-panel fork/inject/append (Node) |
 | `references/tuner-conventions.md` | Step 5, before adding a tuner panel |
 | `templates/tuner-panel.html` | Step 5, adding tuners |
