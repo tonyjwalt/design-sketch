@@ -16,6 +16,9 @@ FIXTURE_SKETCH = """<!doctype html>
 <style>
   :root {
     --demo-color: #333;
+    --space-md: 16px;
+    --space-lg: 32px;
+    --accent-color: #3366ff;
   }
   body { font-family: sans-serif; }
 </style>
@@ -382,6 +385,113 @@ def test_tune_css_var_partial_range_errors():
         )
         assert result.returncode != 0
         assert "--min" in result.stderr and "--max" in result.stderr
+
+
+# -- tune: css-var root-scope validation (.scratch/tuner-scaffold-gaps/issues/02) ---------------
+
+
+def test_tune_rejects_css_var_target_not_declared_in_root():
+    """A range control targeting a custom property that's never declared in :root fails fast,
+    naming the property and saying it needs to live in :root — instead of silently scaffolding a
+    control that would never visibly affect the page (a property re-declared closer to the target
+    element shadows whatever `setProperty` writes at the root, with no error anywhere downstream)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--undeclared-space", "--label", "Spacing", "--min", "4", "--max", "64"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--undeclared-space" in result.stderr
+        assert ":root" in result.stderr
+        assert not (Path(tmp) / "sketch-demo-tuned.html").exists()  # nothing written
+
+
+def test_tune_rejects_swatch_target_not_declared_in_root():
+    """The same root-scope check applies to a swatch (--options) css-var control, not just range."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--undeclared-accent", "--label", "Accent", "--options", "#111,#222"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--undeclared-accent" in result.stderr
+
+
+def test_tune_rejects_color_input_target_not_declared_in_root():
+    """The same root-scope check applies to a color-input (no --min/--max, no --options) control."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--undeclared-accent", "--label", "Accent"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--undeclared-accent" in result.stderr
+
+
+def test_tune_accepts_css_var_target_declared_via_var_indirection():
+    """A target declared in :root through `var()` indirection (e.g. `--nav-bg: var(--color-surface);`)
+    counts as declared — the check only cares that the property itself has a :root declaration, not
+    that its value is a literal."""
+    indirect_fixture = FIXTURE_SKETCH.replace(
+        "--demo-color: #333;", "--demo-color: #333;\n    --nav-bg: var(--demo-color);"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(indirect_fixture)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--nav-bg", "--label", "Nav background"],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'data-target="--nav-bg"' in out
+
+
+def test_tune_rejects_undeclared_target_when_appending_to_existing_panel():
+    """The root-scope check also applies on the append path (a file that already has a panel), not
+    just the first fork."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+        before = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        result = run_tune(
+            tmp, "sketch-demo-tuned.html",
+            ["--type", "css-var", "--target", "--undeclared-accent", "--label", "Accent"],
+            check=False,
+        )
+        assert result.returncode != 0
+        after = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert before == after  # nothing appended
+
+
+def test_tune_edit_rejects_new_target_not_declared_in_root():
+    """`--edit` re-validates the (possibly new) --target the same way create/first-add does."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+        before = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        result = run_tune(
+            tmp, "sketch-demo-tuned.html",
+            [
+                "--edit", "--space-md", "--type", "css-var", "--target", "--undeclared-space",
+                "--label", "Spacing", "--min", "4", "--max", "64",
+            ],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--undeclared-space" in result.stderr
+        after = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert before == after  # old control left in place, not swapped out
 
 
 def test_tune_color_input_second_call_appends_to_existing_panel():
@@ -858,16 +968,33 @@ def test_bake_values_unknown_target_errors():
 
 def test_bake_css_var_override_of_undeclared_property_errors():
     """Overriding a css-var control whose custom property was never declared in `:root` fails
-    clearly rather than silently writing nothing."""
+    clearly rather than silently writing nothing. `tune` itself now refuses to scaffold a control
+    like this in the first place (test_tune_rejects_css_var_target_not_declared_in_root), so this
+    hand-builds the panel to exercise bake's own independent, defense-in-depth check against a
+    panel that got into this state some other way (hand-authored, or from an older tool version)."""
+    panel = (
+        '<!-- design-sketch:tuner-panel -->\n'
+        '<style>.tuner-panel{}</style>\n\n'
+        '<details class="tuner-panel" id="tunerPanel" open>\n'
+        '  <summary class="tuner-panel-header">Tuners</summary>\n'
+        '  <div class="tuner-panel-body">\n\n'
+        '  <label>\n'
+        '    Spacing\n'
+        '    <input id="spacingRange" type="range" data-bind="css-var" data-target="--undeclared-space" min="4" max="64" value="16">\n'
+        '  </label>\n\n'
+        '  </div>\n'
+        '</details>\n\n'
+        '<script>(function () {})();</script>\n'
+        '<!-- /design-sketch:tuner-panel -->\n'
+    )
+    html = FIXTURE_SKETCH.replace("</body>", panel + "</body>")  # --undeclared-space never in :root
     with tempfile.TemporaryDirectory() as tmp:
-        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)  # only declares --demo-color
-        run_tune(
-            tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        (Path(tmp) / "sketch-demo-tuned.html").write_text(html)
+        result = run_bake(
+            tmp, "sketch-demo-tuned.html", ["--values", '{"--undeclared-space": "40px"}'], check=False
         )
-        result = run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"--space-md": "40px"}'], check=False)
         assert result.returncode != 0
-        assert "--space-md" in result.stderr
+        assert "--undeclared-space" in result.stderr
 
 
 def test_bake_missing_file_errors():

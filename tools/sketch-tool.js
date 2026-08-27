@@ -275,8 +275,27 @@ function buildClassToggleControl(opts) {
   );
 }
 
+// A tuner's binding script sets a css-var's value via
+// `document.documentElement.style.setProperty(...)`, which only takes effect if the property isn't
+// re-declared on a more specific selector closer to the target element — that shadows the root
+// value silently, with no error anywhere in the chain (bake's `substituteRootProp` already assumes
+// root-scoping; this makes that assumption an enforced precondition at scaffold time). Guards
+// range/swatch/color alike, since all three bind through the same `:root`-scoped mechanism.
+function validateCssVarTargetInRoot(content, propName) {
+  const root = findRootBlock(content);
+  const declared = root ? parseCustomProps(root.inner).some((p) => p.name === propName) : false;
+  if (!declared) {
+    throw new Error(
+      `custom property "${propName}" is not declared in :root — a css-var control only works if its ` +
+        `target lives there (a control bound to an undeclared or shadowed property would silently do ` +
+        `nothing). Declare "${propName}" in :root first.`
+    );
+  }
+}
+
 function buildControlMarkup(opts, existingContent) {
   if (opts.type === 'class-toggle') return buildClassToggleControl(opts);
+  validateCssVarTargetInRoot(existingContent, opts.target);
   if (opts.options) return buildSwatchControl(opts);
   if (opts.min !== null || opts.max !== null) return buildContinuousControl(opts, existingContent);
   return buildColorControl(opts);
@@ -928,6 +947,7 @@ module.exports = {
   findRootBlock,
   parseCustomProps,
   buildControlMarkup,
+  validateCssVarTargetInRoot,
   injectTunerPanel,
   appendControlToPanel,
   removeControlFromPanel,

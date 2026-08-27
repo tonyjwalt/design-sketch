@@ -29,6 +29,13 @@ Get this backwards and the panel silently does nothing — there's no error, the
 just doesn't match anything. Check `templates/tuner-panel.html`'s own two examples before wiring a
 new control.
 
+A `css-var` target also has to be **declared in `:root`**, not just spelled correctly:
+`sketch-tool tune` checks this at scaffold time and refuses to create the control otherwise. A
+property re-declared on a more specific selector (e.g. `#site-nav { --nav-bg: ...; }`) shadows
+whatever the tuner writes at the root via `setProperty`, and the control would silently do nothing
+— the same failure mode as a typo'd target, just one `tune` can't catch by name matching alone, so
+declare the property in `:root` first.
+
 ## Readouts
 
 A continuous control's "adjacent number readout" is `data-readout="someId"` on the `<input>` plus a
