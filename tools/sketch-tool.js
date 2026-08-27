@@ -95,6 +95,14 @@ function parseCustomProps(innerText) {
   return props;
 }
 
+// Single source of truth for "is this custom property declared in :root", shared by tune's
+// scaffold-time check (validateCssVarTargetInRoot) and bake's substitution check
+// (substituteRootProp) — both care about the same precondition and must agree on it.
+function isCustomPropDeclaredInRoot(content, propName) {
+  const root = findRootBlock(content);
+  return root ? parseCustomProps(root.inner).some((p) => p.name === propName) : false;
+}
+
 // -- id-overlay injection ------------------------------------------------------------------
 
 function injectIdOverlay(content) {
@@ -282,9 +290,7 @@ function buildClassToggleControl(opts) {
 // root-scoping; this makes that assumption an enforced precondition at scaffold time). Guards
 // range/swatch/color alike, since all three bind through the same `:root`-scoped mechanism.
 function validateCssVarTargetInRoot(content, propName) {
-  const root = findRootBlock(content);
-  const declared = root ? parseCustomProps(root.inner).some((p) => p.name === propName) : false;
-  if (!declared) {
+  if (!isCustomPropDeclaredInRoot(content, propName)) {
     throw new Error(
       `custom property "${propName}" is not declared in :root — a css-var control only works if its ` +
         `target lives there (a control bound to an undeclared or shadowed property would silently do ` +
@@ -543,11 +549,11 @@ function parsePanelControls(content) {
 function substituteRootProp(content, propName, rawValue) {
   const root = findRootBlock(content);
   if (!root) throw new Error(`no :root block found to bake "${propName}" into`);
-
-  const declRe = new RegExp('([ \\t]*' + escapeRegExp(propName) + '\\s*:\\s*)[^;]+(;)');
-  if (!declRe.test(root.inner)) {
+  if (!isCustomPropDeclaredInRoot(content, propName)) {
     throw new Error(`custom property "${propName}" is not declared in :root — nothing to bake it into`);
   }
+
+  const declRe = new RegExp('([ \\t]*' + escapeRegExp(propName) + '\\s*:\\s*)[^;]+(;)');
   const newInner = root.inner.replace(declRe, `$1${rawValue}$2`);
   return content.slice(0, root.openBrace + 1) + newInner + content.slice(root.closeBrace);
 }
@@ -946,6 +952,7 @@ module.exports = {
   mergeWireframeTokens,
   findRootBlock,
   parseCustomProps,
+  isCustomPropDeclaredInRoot,
   buildControlMarkup,
   validateCssVarTargetInRoot,
   injectTunerPanel,

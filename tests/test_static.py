@@ -997,6 +997,46 @@ def test_bake_css_var_override_of_undeclared_property_errors():
         assert "--undeclared-space" in result.stderr
 
 
+def test_tune_and_bake_agree_on_root_declaration_with_trailing_comment():
+    """A :root declaration followed by a same-line comment (e.g. `--space-md: 16px; /* note */`)
+    doesn't count as "declared" for tune's scaffold-time check or bake's substitution check — both
+    now share `isCustomPropDeclaredInRoot`, so they can't disagree on this the way they used to
+    (bake's own regex used to be looser than tune's and would have accepted this)."""
+    fixture = FIXTURE_SKETCH.replace("--space-md: 16px;", "--space-md: 16px; /* trailing comment */")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(fixture)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--space-md" in result.stderr
+
+    panel = (
+        '<!-- design-sketch:tuner-panel -->\n'
+        '<style>.tuner-panel{}</style>\n\n'
+        '<details class="tuner-panel" id="tunerPanel" open>\n'
+        '  <summary class="tuner-panel-header">Tuners</summary>\n'
+        '  <div class="tuner-panel-body">\n\n'
+        '  <label>\n'
+        '    Spacing\n'
+        '    <input type="range" data-bind="css-var" data-target="--space-md" min="4" max="64" value="16">\n'
+        '  </label>\n\n'
+        '  </div>\n'
+        '</details>\n\n'
+        '<script>(function () {})();</script>\n'
+        '<!-- /design-sketch:tuner-panel -->\n'
+    )
+    html = fixture.replace("</body>", panel + "</body>")
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo-tuned.html").write_text(html)
+        result = run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"--space-md": "40px"}'], check=False)
+        assert result.returncode != 0
+        assert "--space-md" in result.stderr
+
+
 def test_bake_missing_file_errors():
     """`bake` against a file that doesn't exist fails clearly."""
     with tempfile.TemporaryDirectory() as tmp:
