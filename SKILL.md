@@ -113,7 +113,8 @@ Name files descriptively: `sketch-<subject>.html`
 
    ```
    node tools/sketch-tool.js tune <file> --type css-var|class-toggle --target <name-or-selector> \
-     --label <text> [--options a,b,c] [--min N --max N] [--value V] [--unit STR] [--readout] [--prefix STR]
+     --label <text> [--options a,b,c] [--min N --max N] [--value V] [--unit STR] [--readout] \
+     [--prefix STR] [--boolean | --radio]
    ```
 
    The command is smart about `<file>`'s state: run against the exploration sketch (no panel yet),
@@ -123,8 +124,10 @@ Name files descriptively: `sketch-<subject>.html`
    same tuned file, it appends the new control to the existing panel instead of duplicating the
    `<details>` chrome, style, or script. `--type css-var` takes either `--min`/`--max` (continuous, with
    optional `--value`/`--unit`) or `--options` (swatch buttons) — never both. `--type class-toggle`
-   takes `--options` (variant names for a `<select>`) and treats `--target` as a CSS **selector**, not
-   a custom property name. `--readout` wires a continuous control's live numeric readout
+   treats `--target` as a CSS **selector**, not a custom property name, and takes one of: `--options`
+   (variant names for a `<select>`), `--options` plus `--radio` (one radio input per option, sharing a
+   `name`), or `--boolean` plus `--value` (a single checkbox toggling the one fixed class named by
+   `--value`). `--readout` wires a continuous control's live numeric readout
    (`data-readout` plus a matching `<output>`) automatically — never hand-write that binding.
    Controls are bound only via the `data-bind`/`data-target` attributes the template defines; see
    `templates/tuner-panel.html`'s own examples of both bind types before wiring one by hand.

@@ -563,6 +563,220 @@ def test_tune_class_toggle_rejects_min_max():
         assert result.returncode != 0
 
 
+# -- tune: class-toggle boolean checkbox / radio-group controls
+# (.scratch/tuner-scaffold-gaps/issues/03) -----------------------------------------------
+
+
+def test_tune_class_toggle_boolean_scaffolds_checkbox():
+    """`--type class-toggle --boolean` scaffolds a single checkbox instead of a <select>, unchecked
+    by default."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean", "--value", "highlighted"],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'type="checkbox"' in out
+        assert 'data-bind="class-toggle"' in out
+        assert 'data-target="body"' in out
+        assert 'value="highlighted"' in out
+        assert "<select" not in out
+        assert "checked>" not in out  # unchecked by default ("checked>" excludes the script's el.checked)
+
+
+def test_tune_class_toggle_boolean_rejects_options():
+    """`--boolean` combined with `--options` fails — a boolean control has exactly one fixed class,
+    not a set of variants."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean", "--options", "a,b", "--value", "a"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--options" in result.stderr
+
+
+def test_tune_class_toggle_boolean_requires_value():
+    """`--boolean` without `--value` fails clearly — there's no --options to draw a class name
+    from."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--value" in result.stderr
+
+
+def test_tune_class_toggle_radio_scaffolds_radio_group():
+    """`--type class-toggle --radio --options a,b` scaffolds one radio input per option, sharing a
+    name, instead of a <select>."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio", "--options", "compact,spacious"],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert out.count('type="radio"') == 2
+        assert 'name="layout"' in out
+        assert 'value="compact"' in out and 'value="spacious"' in out
+        assert "<select" not in out
+        assert 'role="radiogroup"' in out
+        assert out.count("checked>") == 1  # first option checked by default ("checked>" excludes el.checked)
+
+
+def test_tune_class_toggle_radio_value_flag_selects_that_option():
+    """`--value` on a radio-group control marks that option `checked` instead of the first."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            [
+                "--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio",
+                "--options", "compact,spacious", "--value", "spacious",
+            ],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'value="spacious" checked' in out
+        assert 'value="compact" checked' not in out
+
+
+def test_tune_class_toggle_radio_requires_options():
+    """`--radio` without `--options` fails clearly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--options" in result.stderr
+
+
+def test_tune_class_toggle_boolean_and_radio_mutually_exclusive():
+    """Passing both `--boolean` and `--radio` fails rather than silently picking one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--boolean", "--radio", "--options", "a,b"],
+            check=False,
+        )
+        assert result.returncode != 0
+
+
+def test_tune_boolean_and_radio_reject_css_var():
+    """`--boolean`/`--radio` only apply to `--type class-toggle` — passing either against
+    `--type css-var` fails clearly instead of silently being ignored."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64", "--boolean"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--boolean" in result.stderr
+
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64", "--radio"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--radio" in result.stderr
+
+
+def test_tune_class_toggle_radio_wires_data_prefix():
+    """`--prefix` on a radio-group control carries `data-prefix` onto each radio input, the same as
+    it does onto a <select>."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            [
+                "--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio",
+                "--options", "compact,spacious", "--prefix", "layout--",
+            ],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert out.count('data-prefix="layout--"') == 2
+
+
+def test_tune_class_toggle_boolean_second_call_appends_to_existing_panel():
+    """A boolean checkbox control appends into an already-forked panel like select/radio controls
+    do."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean", "--value", "highlighted"],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert out.count("<!-- design-sketch:tuner-panel -->") == 1
+        assert out.count("<details") == 1
+        assert 'data-target="--space-md"' in out
+        assert 'type="checkbox"' in out
+
+
+def test_tune_edit_boolean_checkbox_control():
+    """`--edit <target>` replaces a select-based control with a boolean checkbox control,
+    preserving the other control."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)  # --space-md (Spacing), body (Layout, select)
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            [
+                "--edit", "body", "--type", "class-toggle", "--target", "body",
+                "--label", "Highlight", "--boolean", "--value", "highlighted",
+            ],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert out.count("<label>") == 2
+        assert 'type="checkbox"' in out
+        assert "<select" not in out
+        assert 'data-target="--space-md"' in out  # untouched control survives
+
+
+def test_tune_remove_radio_group_control():
+    """`--remove <target>` deletes a radio-group control like it does select/checkbox controls."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio", "--options", "compact,spacious"],
+        )
+        run_tune(tmp, "sketch-demo-tuned.html", ["--remove", "body"])
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'data-target="body"' not in out
+        assert 'data-target="--space-md"' in out
+
+
+def test_tuner_panel_script_toggles_checkbox_class_on_check_state():
+    """templates/tuner-panel.html's generic listener adds/removes a boolean checkbox's fixed class
+    based on `checked`, instead of unconditionally adding it the way it does for select/radio (whose
+    `change` event always means "a new option was chosen") — otherwise unchecking the box would
+    never remove the class."""
+    script = (DIR / "templates" / "tuner-panel.html").read_text()
+    assert "checkbox" in script
+    assert "el.checked" in script
+
+
 def make_two_control_tuned_file(tmp):
     """Sets up sketch-demo-tuned.html with a Spacing (css-var) and a Layout (class-toggle) control."""
     (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
@@ -954,6 +1168,52 @@ def test_bake_class_toggle_radio_group_default_uses_checked_radio():
         out = (Path(tmp) / "sketch-demo-reference.html").read_text()
         assert '<body class="spacious">' in out
         assert "tuner-panel" not in out
+
+
+def test_bake_boolean_checkbox_scaffolded_via_cli_bakes_default_unchecked():
+    """A boolean checkbox control scaffolded via `tune --boolean` (unchecked by default) bakes with
+    no class applied, when left out of --values."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean", "--value", "highlighted"],
+        )
+        run_bake(tmp, "sketch-demo-tuned.html", [])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert "<body>" in out
+        assert "highlighted" not in out
+
+
+def test_bake_boolean_checkbox_override_applies_class():
+    """`--values` naming a boolean checkbox control's target hardcodes its fixed class onto the
+    target element."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean", "--value", "highlighted"],
+        )
+        run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"body": "highlighted"}'])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert '<body class="highlighted">' in out
+
+
+def test_bake_radio_group_scaffolded_via_cli_bakes_default_checked_option():
+    """A radio-group control scaffolded via `tune --radio` bakes in whichever option `--value`
+    marked `checked`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
+        run_tune(
+            tmp, "sketch-demo.html",
+            [
+                "--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio",
+                "--options", "compact,spacious", "--value", "spacious",
+            ],
+        )
+        run_bake(tmp, "sketch-demo-tuned.html", [])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert '<body class="spacious">' in out
 
 
 def test_bake_values_unknown_target_errors():

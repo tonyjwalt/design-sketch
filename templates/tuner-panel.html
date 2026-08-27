@@ -150,6 +150,10 @@
       var target = document.querySelector(el.dataset.target);
       if (!target) return;
       var prefix = el.dataset.prefix || '';
+      if (el.type === 'checkbox') {
+        target.classList.toggle(prefix + el.value, el.checked);
+        return;
+      }
       Array.from(target.classList).forEach(function (c) {
         if (c.indexOf(prefix) === 0) target.classList.remove(c);
       });

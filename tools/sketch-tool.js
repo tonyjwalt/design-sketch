@@ -28,12 +28,15 @@ function usage() {
     '',
     '  tune <file> --type css-var|class-toggle --target <name-or-selector> --label <text>',
     '       [--options a,b,c] [--min N --max N] [--value V] [--unit STR] [--readout] [--prefix STR]',
+    '       [--boolean | --radio]',
     '      Against an exploration sketch (no tuner panel yet): forks to <subject>-tuned.html and',
     '      injects a tuner panel skeleton with this one control. Against a file that already',
     '      carries a panel: appends this control to it in place. --type css-var takes --min/--max',
     '      (continuous, range input), --options (swatch buttons), or neither (color-input, for when',
-    '      no palette exists yet). --type class-toggle takes --options (variant names for a <select>)',
-    '      and interprets --target as a CSS selector.',
+    '      no palette exists yet). --type class-toggle interprets --target as a CSS selector, and',
+    '      takes --options (variant names for a <select>), --options plus --radio (one radio input',
+    '      per option, sharing a name), or --boolean plus --value (a single checkbox toggling one',
+    '      fixed class named by --value).',
     '',
     '  tune <file> --remove <target>',
     '      Deletes the control bound to <target> from an existing panel. Drops the whole panel',
@@ -283,6 +286,55 @@ function buildClassToggleControl(opts) {
   );
 }
 
+// `--boolean`: a single checkbox toggling one fixed class (references/tuner-conventions.md,
+// "Boolean... <input type="checkbox">"). Unlike the select/radio shapes, there's no --options list
+// to draw the class name from, so --value names it directly and is required.
+function buildCheckboxToggleControl(opts) {
+  const prefixAttr = opts.prefix ? ` data-prefix="${escapeAttr(opts.prefix)}"` : '';
+
+  return (
+    `  <label>\n` +
+    `    ${escapeText(opts.label)}\n` +
+    `    <input type="checkbox" data-bind="class-toggle" data-target="${escapeAttr(opts.target)}"${prefixAttr} value="${escapeAttr(opts.value)}">\n` +
+    `  </label>`
+  );
+}
+
+// Appends a numeric suffix until `name="<base>"` doesn't collide with a name already in `content` —
+// the radio-group analog of uniqueId, since radios sharing a group need a distinct `name`.
+function uniqueName(base, content) {
+  if (!content.includes(`name="${base}"`)) return base;
+  let n = 2;
+  while (content.includes(`name="${base}${n}"`)) n++;
+  return `${base}${n}`;
+}
+
+// `--radio`: one <input type="radio"> per --options value, sharing a `name` (references/tuner-conventions.md,
+// "Discrete named options... <select> or radio group").
+function buildRadioToggleControl(opts, existingContent) {
+  const values = splitOptions(opts.options);
+  const selectedValue = opts.value !== null ? opts.value : values[0];
+  if (!values.includes(selectedValue)) {
+    throw new Error(`--value "${selectedValue}" must be one of --options: ${values.join(', ')}`);
+  }
+
+  const name = uniqueName(labelToId(opts.label), existingContent);
+  const prefixAttr = opts.prefix ? ` data-prefix="${escapeAttr(opts.prefix)}"` : '';
+  const radios = values
+    .map(
+      (v) =>
+        `      <input type="radio" name="${name}" data-bind="class-toggle" data-target="${escapeAttr(opts.target)}"${prefixAttr} value="${escapeAttr(v)}"${v === selectedValue ? ' checked' : ''}>`
+    )
+    .join('\n');
+
+  return (
+    `  <label>\n` +
+    `    ${escapeText(opts.label)}\n` +
+    `    <span role="radiogroup" aria-label="${escapeAttr(opts.label)}">\n${radios}\n    </span>\n` +
+    `  </label>`
+  );
+}
+
 // A tuner's binding script sets a css-var's value via
 // `document.documentElement.style.setProperty(...)`, which only takes effect if the property isn't
 // re-declared on a more specific selector closer to the target element — that shadows the root
@@ -300,7 +352,11 @@ function validateCssVarTargetInRoot(content, propName) {
 }
 
 function buildControlMarkup(opts, existingContent) {
-  if (opts.type === 'class-toggle') return buildClassToggleControl(opts);
+  if (opts.type === 'class-toggle') {
+    if (opts.boolean) return buildCheckboxToggleControl(opts);
+    if (opts.radio) return buildRadioToggleControl(opts, existingContent);
+    return buildClassToggleControl(opts);
+  }
   validateCssVarTargetInRoot(existingContent, opts.target);
   if (opts.options) return buildSwatchControl(opts);
   if (opts.min !== null || opts.max !== null) return buildContinuousControl(opts, existingContent);
@@ -682,12 +738,22 @@ function parseTuneArgs(args) {
     prefix: null,
     remove: null,
     edit: null,
+    boolean: false,
+    radio: false,
   };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--readout') {
       opts.readout = true;
+      continue;
+    }
+    if (arg === '--boolean') {
+      opts.boolean = true;
+      continue;
+    }
+    if (arg === '--radio') {
+      opts.radio = true;
       continue;
     }
     const eq = arg.indexOf('=');
@@ -721,7 +787,8 @@ function validateTuneOpts(opts) {
   }
 
   if (opts.remove !== null) {
-    const hasOther = opts.readout || CONTROL_DEFINITION_FLAGS.some((k) => opts[k] !== null);
+    const hasOther =
+      opts.readout || opts.boolean || opts.radio || CONTROL_DEFINITION_FLAGS.some((k) => opts[k] !== null);
     if (hasOther) {
       throw new Error('--remove takes no other flags besides <file> and --remove <target>');
     }
@@ -740,13 +807,33 @@ function validateTuneOpts(opts) {
     if (opts.min !== null || opts.max !== null || opts.unit !== null || opts.readout) {
       throw new Error('--min/--max/--unit/--readout only apply to --type css-var');
     }
+    if (opts.boolean && opts.radio) {
+      throw new Error('--boolean and --radio are mutually exclusive');
+    }
+    if (opts.boolean) {
+      if (opts.options) {
+        throw new Error(
+          '--boolean does not take --options — it scaffolds a single fixed-class checkbox, not a set of variants'
+        );
+      }
+      if (!opts.value) {
+        throw new Error('--boolean requires --value naming the fixed class the checkbox toggles');
+      }
+      return;
+    }
+    if (opts.radio && !opts.options) {
+      throw new Error('--radio requires --options (comma-separated variant names)');
+    }
     if (!opts.options) {
-      throw new Error('--type class-toggle requires --options (comma-separated variant names)');
+      throw new Error(
+        '--type class-toggle requires --options (comma-separated variant names), or --boolean for a single checkbox'
+      );
     }
     return;
   }
 
   if (opts.prefix !== null) throw new Error('--prefix only applies to --type class-toggle');
+  if (opts.boolean || opts.radio) throw new Error('--boolean/--radio only apply to --type class-toggle');
   const hasMin = opts.min !== null;
   const hasMax = opts.max !== null;
   const hasOptions = !!opts.options;
