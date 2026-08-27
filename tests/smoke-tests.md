@@ -77,6 +77,9 @@ authored per-control
 - [ ] `references/tuner-conventions.md` guidance is followed: range input for the continuous value
       (width) with a `data-readout`-wired `<output>`, select/radio for the discrete value (layout
       variant), `<input type="color">` for the accent (no palette exists yet, per the input)
+- [ ] All three controls, including the color input, are produced via `sketch-tool.js tune`
+      (`--type css-var` with neither `--min`/`--max` nor `--options` scaffolds the color input) —
+      not hand-authored panel markup
 - [ ] All controls use `data-bind`/`data-target` attributes; no per-control `addEventListener` was
       hand-written
 - [ ] Panel is a single `<details class="tuner-panel">` block, not interleaved with sketch content
@@ -86,6 +89,7 @@ authored per-control
 - Original exploration sketch is modified instead of copied
 - Model writes bespoke JS logic per control instead of reusing the generic delegated listeners
 - Model uses swatch buttons for the accent color despite the input saying no palette exists yet
+- Model hand-authors the color-input control's markup instead of running `sketch-tool.js tune`
 - Panel markup is scattered through the DOM instead of one contiguous block
 
 ---

@@ -330,17 +330,115 @@ def test_tune_fork_target_already_existing_errors_instead_of_overwriting():
         assert "already exists" in result.stderr
 
 
-def test_tune_css_var_requires_min_max_or_options():
-    """`--type css-var` without --min/--max or --options fails with a clear error."""
+def test_tune_css_var_without_range_or_options_scaffolds_color_input():
+    """`--type css-var` with neither --min/--max nor --options scaffolds a color-input control."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent"],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'type="color"' in out
+        assert 'data-bind="css-var"' in out
+        assert 'data-target="--accent-color"' in out
+        assert 'value="#000000"' in out  # sensible fallback when --value is omitted
+
+
+def test_tune_color_input_value_flag_sets_initial_hex():
+    """`--value` on a color-input control sets its initial hex value."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--value", "#3366ff"],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'value="#3366ff"' in out
+
+
+def test_tune_color_input_rejects_readout():
+    """`--readout` on a color-input control (no --min/--max) fails clearly."""
     with tempfile.TemporaryDirectory() as tmp:
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing"],
+            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--readout"],
             check=False,
         )
         assert result.returncode != 0
-        assert "--min/--max" in result.stderr or "--options" in result.stderr
+        assert "--readout" in result.stderr
+
+
+def test_tune_css_var_partial_range_errors():
+    """Only one of --min/--max (without the other, and without --options) is rejected rather than
+    silently falling through to a color-input control."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        result = run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4"],
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--min" in result.stderr and "--max" in result.stderr
+
+
+def test_tune_color_input_second_call_appends_to_existing_panel():
+    """A color-input control appends into an already-forked panel like range/swatch controls do."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        )
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent"],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert out.count("<!-- design-sketch:tuner-panel -->") == 1
+        assert out.count("<details") == 1
+        assert 'data-target="--space-md"' in out
+        assert 'data-target="--accent-color"' in out
+        assert 'type="color"' in out
+
+
+def test_tune_edit_color_input_replaces_value_in_place():
+    """`--edit <target>` replaces a color-input control's definition, preserving other controls."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)  # --space-md (Spacing), body (Layout)
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--value", "#111111"],
+        )
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            [
+                "--edit", "--accent-color", "--type", "css-var", "--target", "--accent-color",
+                "--label", "Accent", "--value", "#222222",
+            ],
+        )
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert out.count("<label>") == 3
+        assert 'value="#222222"' in out
+        assert 'value="#111111"' not in out
+        assert 'data-target="body"' in out  # untouched control survives
+
+
+def test_tune_remove_color_input_control():
+    """`--remove <target>` deletes a color-input control like it does range/swatch controls."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_two_control_tuned_file(tmp)
+        run_tune(
+            tmp, "sketch-demo-tuned.html",
+            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent"],
+        )
+        run_tune(tmp, "sketch-demo-tuned.html", ["--remove", "--accent-color"])
+        out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
+        assert 'data-target="--accent-color"' not in out
+        assert 'data-target="--space-md"' in out
+        assert 'data-target="body"' in out
 
 
 def test_tune_class_toggle_rejects_min_max():
@@ -607,6 +705,36 @@ def test_bake_class_toggle_override_hardcodes_class_on_target():
         run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"body": "spacious"}'])
         out = (Path(tmp) / "sketch-demo-reference.html").read_text()
         assert '<body class="spacious">' in out
+
+
+def test_bake_color_input_control_leaves_root_declaration_untouched_without_override():
+    """A color-input control with no `--values` override leaves :root's declared value as-is —
+    same as a range/swatch css-var control (via `bakeCssVarControls`/`substituteRootProp`), which
+    only ever substitutes on an explicit override."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)  # declares --accent-color: #3366ff
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--value", "#e0403f"],
+        )
+        run_bake(tmp, "sketch-demo-tuned.html", [])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert "--accent-color: #3366ff;" in out
+        assert "tuner-panel" not in out
+
+
+def test_bake_color_input_override_substitutes_root_declaration():
+    """A `--values` entry for a color-input control's target overrides its authored default."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
+        run_tune(
+            tmp, "sketch-demo.html",
+            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--value", "#e0403f"],
+        )
+        run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"--accent-color": "#00ff00"}'])
+        out = (Path(tmp) / "sketch-demo-reference.html").read_text()
+        assert "--accent-color: #00ff00;" in out
+        assert "--accent-color: #e0403f;" not in out
 
 
 def test_bake_sparse_values_only_overrides_named_controls():

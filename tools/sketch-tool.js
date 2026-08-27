@@ -30,9 +30,10 @@ function usage() {
     '       [--options a,b,c] [--min N --max N] [--value V] [--unit STR] [--readout] [--prefix STR]',
     '      Against an exploration sketch (no tuner panel yet): forks to <subject>-tuned.html and',
     '      injects a tuner panel skeleton with this one control. Against a file that already',
-    '      carries a panel: appends this control to it in place. --type css-var takes either',
-    '      --min/--max (continuous, range input) or --options (swatch buttons). --type class-toggle',
-    '      takes --options (variant names for a <select>) and interprets --target as a CSS selector.',
+    '      carries a panel: appends this control to it in place. --type css-var takes --min/--max',
+    '      (continuous, range input), --options (swatch buttons), or neither (color-input, for when',
+    '      no palette exists yet). --type class-toggle takes --options (variant names for a <select>)',
+    '      and interprets --target as a CSS selector.',
     '',
     '  tune <file> --remove <target>',
     '      Deletes the control bound to <target> from an existing panel. Drops the whole panel',
@@ -240,6 +241,17 @@ function buildSwatchControl(opts) {
   );
 }
 
+function buildColorControl(opts) {
+  const value = opts.value !== null ? opts.value : '#000000';
+
+  return (
+    `  <label>\n` +
+    `    ${escapeText(opts.label)}\n` +
+    `    <input type="color" data-bind="css-var" data-target="${escapeAttr(opts.target)}" value="${escapeAttr(value)}">\n` +
+    `  </label>`
+  );
+}
+
 function buildClassToggleControl(opts) {
   const values = splitOptions(opts.options);
   const selectedValue = opts.value !== null ? opts.value : values[0];
@@ -265,7 +277,9 @@ function buildClassToggleControl(opts) {
 
 function buildControlMarkup(opts, existingContent) {
   if (opts.type === 'class-toggle') return buildClassToggleControl(opts);
-  return opts.options ? buildSwatchControl(opts) : buildContinuousControl(opts, existingContent);
+  if (opts.options) return buildSwatchControl(opts);
+  if (opts.min !== null || opts.max !== null) return buildContinuousControl(opts, existingContent);
+  return buildColorControl(opts);
 }
 
 // Pulls the generic .tuner-panel <style> and listener <script> straight out of the template —
@@ -708,18 +722,19 @@ function validateTuneOpts(opts) {
   }
 
   if (opts.prefix !== null) throw new Error('--prefix only applies to --type class-toggle');
-  const hasRange = opts.min !== null || opts.max !== null;
+  const hasMin = opts.min !== null;
+  const hasMax = opts.max !== null;
   const hasOptions = !!opts.options;
-  if (hasRange && hasOptions) {
+  if ((hasMin || hasMax) && hasOptions) {
     throw new Error('--type css-var takes either --min/--max (continuous) or --options (swatch), not both');
   }
-  if (!hasRange && !hasOptions) {
-    throw new Error('--type css-var requires either --min/--max (continuous) or --options (swatch)');
-  }
-  if (hasRange && (opts.min === null || opts.max === null)) {
+  if (hasMin !== hasMax) {
     throw new Error('a continuous css-var control requires both --min and --max');
   }
-  if (hasOptions && opts.readout) {
+  // Neither --min/--max nor --options: scaffolds a color-input control (references/tuner-conventions.md
+  // — "no palette yet, tuner is helping find one"), so no "requires either" rejection here.
+  const hasRange = hasMin && hasMax;
+  if (!hasRange && opts.readout) {
     throw new Error('--readout only applies to a continuous css-var control (needs --min/--max)');
   }
 }
