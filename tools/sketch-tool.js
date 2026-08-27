@@ -198,11 +198,13 @@ function labelToId(label) {
   return words.map((w, i) => (i === 0 ? w.toLowerCase() : capitalize(w.toLowerCase()))).join('');
 }
 
-// Appends a numeric suffix until `id="<base>"` doesn't collide with an id already in `content`.
-function uniqueId(base, content) {
-  if (!content.includes(`id="${base}"`)) return base;
+// Appends a numeric suffix until `<attrName>="<base>"` doesn't collide with one already in
+// `content` — shared by id generation (range/output ids) and name generation (radio-group names),
+// since both need "first free slot" collision avoidance against the same kind of string search.
+function uniqueAttr(attrName, base, content) {
+  if (!content.includes(`${attrName}="${base}"`)) return base;
   let n = 2;
-  while (content.includes(`id="${base}${n}"`)) n++;
+  while (content.includes(`${attrName}="${base}${n}"`)) n++;
   return `${base}${n}`;
 }
 
@@ -213,14 +215,14 @@ function splitOptions(raw) {
 }
 
 function buildContinuousControl(opts, existingContent) {
-  const inputId = uniqueId(labelToId(opts.label) + 'Range', existingContent);
+  const inputId = uniqueAttr('id', labelToId(opts.label) + 'Range', existingContent);
   const value = opts.value !== null ? opts.value : opts.min;
   const unitAttr = opts.unit ? ` data-unit="${escapeAttr(opts.unit)}"` : '';
 
   let readoutAttr = '';
   let outputEl = '';
   if (opts.readout) {
-    const outId = uniqueId(labelToId(opts.label) + 'Out', existingContent);
+    const outId = uniqueAttr('id', labelToId(opts.label) + 'Out', existingContent);
     readoutAttr = ` data-readout="${outId}"`;
     outputEl = `\n    <output id="${outId}" for="${inputId}">${escapeText(value + (opts.unit || 'px'))}</output>`;
   }
@@ -263,12 +265,20 @@ function buildColorControl(opts) {
   );
 }
 
-function buildClassToggleControl(opts) {
+// Resolves which of --options' values is selected for the select and radio-group class-toggle
+// shapes: --value if given (validated against --options), else the first option. Shared so both
+// shapes agree on this resolution and its error message.
+function resolveClassToggleSelection(opts) {
   const values = splitOptions(opts.options);
   const selectedValue = opts.value !== null ? opts.value : values[0];
   if (!values.includes(selectedValue)) {
     throw new Error(`--value "${selectedValue}" must be one of --options: ${values.join(', ')}`);
   }
+  return { values, selectedValue };
+}
+
+function buildClassToggleControl(opts) {
+  const { values, selectedValue } = resolveClassToggleSelection(opts);
 
   const optionsHtml = values
     .map(
@@ -300,25 +310,12 @@ function buildCheckboxToggleControl(opts) {
   );
 }
 
-// Appends a numeric suffix until `name="<base>"` doesn't collide with a name already in `content` —
-// the radio-group analog of uniqueId, since radios sharing a group need a distinct `name`.
-function uniqueName(base, content) {
-  if (!content.includes(`name="${base}"`)) return base;
-  let n = 2;
-  while (content.includes(`name="${base}${n}"`)) n++;
-  return `${base}${n}`;
-}
-
 // `--radio`: one <input type="radio"> per --options value, sharing a `name` (references/tuner-conventions.md,
 // "Discrete named options... <select> or radio group").
 function buildRadioToggleControl(opts, existingContent) {
-  const values = splitOptions(opts.options);
-  const selectedValue = opts.value !== null ? opts.value : values[0];
-  if (!values.includes(selectedValue)) {
-    throw new Error(`--value "${selectedValue}" must be one of --options: ${values.join(', ')}`);
-  }
+  const { values, selectedValue } = resolveClassToggleSelection(opts);
 
-  const name = uniqueName(labelToId(opts.label), existingContent);
+  const name = uniqueAttr('name', labelToId(opts.label), existingContent);
   const prefixAttr = opts.prefix ? ` data-prefix="${escapeAttr(opts.prefix)}"` : '';
   const radios = values
     .map(
