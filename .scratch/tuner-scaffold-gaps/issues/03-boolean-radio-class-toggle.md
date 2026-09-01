@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [x] A new flag (e.g. `--boolean`, taking no value) on `--type class-toggle` scaffolds `<input type="checkbox" data-bind="class-toggle" data-target="<selector>" ...>` wired to add/remove one fixed class, instead of requiring `--options`
 - [x] A new flag (e.g. `--radio`) on `--type class-toggle` with `--options` scaffolds a radio group (one `<input type="radio">` per option, sharing a `name`) instead of a `<select>`

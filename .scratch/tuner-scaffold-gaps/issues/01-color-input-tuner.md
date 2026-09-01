@@ -6,7 +6,7 @@ This closes the gap where color-input is the only tuner shape named in `CONTEXT.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [x] `tune --type css-var --target <prop> --label <text>` (no `--min`/`--max`, no `--options`) produces `<input type="color" data-bind="css-var" data-target="<prop>" value="<hex>">`; `--value` sets the initial hex, defaulting to a sensible fallback (e.g. `#000000`) if omitted
 - [x] Fork-or-append behavior matches the existing range/swatch controls: first `tune` call against a panel-less file forks to `<subject>-tuned.html`; subsequent calls append to the existing panel body

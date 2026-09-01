@@ -6,10 +6,14 @@ This is the root cause of a real incident: a tuner's binding script sets the val
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] `tune --type css-var --target <prop> ...` reads the target file's `:root { ... }` block and errors immediately (before writing anything) if `<prop>` is not declared there
-- [ ] Error message names the property and says where it needs to live (in `:root`), not a generic parse failure
-- [ ] Applies uniformly to all three css-var shapes (range, swatch, and color once ticket 01 lands)
-- [ ] A target legitimately declared in `:root` — including via `var()` indirection, e.g. `--nav-bg: var(--color-surface);` — is accepted, not just a literal value
-- [ ] `--edit` re-validates the (possibly new) target the same way `create`/first-add does
+- [x] `tune --type css-var --target <prop> ...` reads the target file's `:root { ... }` block and errors immediately (before writing anything) if `<prop>` is not declared there
+- [x] Error message names the property and says where it needs to live (in `:root`), not a generic parse failure
+- [x] Applies uniformly to all three css-var shapes (range, swatch, and color once ticket 01 lands)
+- [x] A target legitimately declared in `:root` — including via `var()` indirection, e.g. `--nav-bg: var(--color-surface);` — is accepted, not just a literal value
+- [x] `--edit` re-validates the (possibly new) target the same way `create`/first-add does
+
+## Comments
+
+Verified against current `tools/sketch-tool.js`: `validateCssVarTargetInRoot` (line ~363) throws `custom property "<prop>" is not declared in :root — ...` and is called from all three css-var shapes in `buildControlMarkup`'s switch (range/swatch/color, lines ~376-383, post ticket-05 refactor). `isCustomPropDeclaredInRoot` (line ~108) matches on property name only, independent of whether the declared value is a literal or a `var()` reference, so indirection is accepted. This ticket's checkboxes and status were stale — the work landed as part of implementing 01/05 but this file was never updated to reflect it; no code changes made here, bookkeeping only.
