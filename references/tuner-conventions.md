@@ -5,18 +5,24 @@ per-sketch human decision — these conventions cover the mechanism, not the cho
 
 ## Element per value type
 
-| Value shape | Element | `data-bind` |
-|---|---|---|
-| Continuous (spacing, size, opacity) | `<input type="range">` + adjacent number readout | `css-var` |
-| Discrete named options (variant, alignment) | `<select>` or radio group | `class-toggle` |
-| Boolean (visible, enabled) | `<input type="checkbox">` | `class-toggle` with one fixed class |
-| Known palette to choose among | Row of `<button value="...">` swatches | `css-var` |
-| No palette yet — tuner is helping find one | `<input type="color">` | `css-var` |
+| Value shape | Element | `--shape` | `data-bind` |
+|---|---|---|---|
+| Continuous (spacing, size, opacity) | `<input type="range">` + adjacent number readout | `range` | `css-var` |
+| Discrete named options (variant, alignment) | `<select>` or radio group | `select` / `radio` | `class-toggle` |
+| Boolean (visible, enabled) | `<input type="checkbox">` | `boolean` | `class-toggle` with one fixed class |
+| Known palette to choose among | Row of `<button value="...">` swatches | `swatch` | `css-var` |
+| No palette yet — tuner is helping find one | `<input type="color">` | `color` | `css-var` |
 
 Both color options are legitimate; which one fits depends on whether there's already a palette to
 choose among, or the tuner's job is to help find one — not a fixed rule yet, use judgment. A swatch
 button's `value` attribute holds the fixed color it applies; the panel's script reads it the same
-way it reads a range or color input's `.value`.
+way it reads a range or color input's `.value`. `--shape color` also takes an optional `--options` of
+preset values — these don't become swatch buttons (that's `--shape swatch`), they become a
+`<datalist>` the color input's `list` attribute points at, surfaced by the browser's own picker UI.
+
+`sketch-tool tune`'s `--shape` flag names the row directly; there's no separate flag for `data-bind`
+— it's derived from `--target`'s own syntax (see below), and `--shape`/`--target` are checked to
+agree before anything is written.
 
 ## `data-target` means different things per `data-bind`
 
@@ -25,9 +31,11 @@ way it reads a range or color input's `.value`.
   class on. There's no fixed wrapper id to assume — target whatever real element the class actually
   belongs on in that sketch (often `body`, or an id/class the sketch already has)
 
-Get this backwards and the panel silently does nothing — there's no error, the selector/property
-just doesn't match anything. Check `templates/tuner-panel.html`'s own two examples before wiring a
-new control.
+Get this backwards by hand and the panel silently does nothing — there's no error, the
+selector/property just doesn't match anything. `sketch-tool tune` can't produce this mismatch itself
+(it derives `data-bind` from `--target`'s own syntax and rejects a `--shape`/`--target` disagreement
+before writing anything), but hand-authored markup in the no-Node fallback still risks it. Check
+`templates/tuner-panel.html`'s own two examples before wiring a new control by hand.
 
 A `css-var` target also has to be **declared in `:root`**, not just spelled correctly:
 `sketch-tool tune` checks this at scaffold time and refuses to create the control otherwise. A

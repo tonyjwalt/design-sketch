@@ -26,23 +26,27 @@ function usage() {
     '      Inject the id-overlay block (default on) and, for --type wireframe, merge',
     '      wireframe-tokens.css custom properties into the file\'s :root.',
     '',
-    '  tune <file> --type css-var|class-toggle --target <name-or-selector> --label <text>',
-    '       [--options a,b,c] [--min N --max N] [--value V] [--unit STR] [--readout] [--prefix STR]',
-    '       [--boolean | --radio]',
+    '  tune <file> --shape <range|swatch|color|select|radio|boolean> --target <name-or-selector>',
+    '       --label <text> [--options a,b,c] [--min N --max N] [--value V] [--unit STR] [--readout]',
+    '       [--prefix STR]',
     '      Against an exploration sketch (no tuner panel yet): forks to <subject>-tuned.html and',
     '      injects a tuner panel skeleton with this one control. Against a file that already',
-    '      carries a panel: appends this control to it in place. --type css-var takes --min/--max',
-    '      (continuous, range input), --options (swatch buttons), or neither (color-input, for when',
-    '      no palette exists yet). --type class-toggle interprets --target as a CSS selector, and',
-    '      takes --options (variant names for a <select>), --options plus --radio (one radio input',
-    '      per option, sharing a name), or --boolean plus --value (a single checkbox toggling one',
-    '      fixed class named by --value).',
+    '      carries a panel: appends this control to it in place. Binding (css-var vs class-toggle) is',
+    '      derived from --target\'s own syntax, not declared: a custom-property name (starts with',
+    '      "--") means css-var, a CSS selector means class-toggle — --shape and --target must agree,',
+    '      or the command errors before writing anything. Per-shape flags:',
+    '        range   (css-var)      --min N --max N (required), --value, --unit, --readout',
+    '        swatch  (css-var)      --options a,b,c (required)',
+    '        color   (css-var)      --options a,b,c (optional presets), --value (optional)',
+    '        select  (class-toggle) --options a,b,c (required), --value, --prefix',
+    '        radio   (class-toggle) --options a,b,c (required), --value, --prefix',
+    '        boolean (class-toggle) --value (required — names the class it toggles)',
     '',
     '  tune <file> --remove <target>',
     '      Deletes the control bound to <target> from an existing panel. Drops the whole panel',
     '      block if it was the only control.',
     '',
-    '  tune <file> --edit <old-target> --type ... --target ... --label ... [...]',
+    '  tune <file> --edit <old-target> --shape ... --target ... --label ... [...]',
     '      Replaces the control bound to <old-target> with a freshly built one from the given',
     '      flags (same flags as creating a control) — a wholesale swap, not a partial patch.',
     '',
@@ -254,13 +258,31 @@ function buildSwatchControl(opts) {
   );
 }
 
-function buildColorControl(opts) {
+// `--options` on a color control is optional: absent, it's a bare native color picker (no palette
+// exists yet). Given, its values become a `<datalist>` the input's `list` attribute points at —
+// native browser preset swatches inside the color picker UI, not a separate visible control (that's
+// what --shape swatch is for).
+function buildColorControl(opts, existingContent) {
   const value = opts.value !== null ? opts.value : '#000000';
+
+  if (!opts.options) {
+    return (
+      `  <label>\n` +
+      `    ${escapeText(opts.label)}\n` +
+      `    <input type="color" data-bind="css-var" data-target="${escapeAttr(opts.target)}" value="${escapeAttr(value)}">\n` +
+      `  </label>`
+    );
+  }
+
+  const values = splitOptions(opts.options);
+  const listId = uniqueAttr('id', labelToId(opts.label) + 'Presets', existingContent);
+  const presetsHtml = values.map((v) => `      <option value="${escapeAttr(v)}"></option>`).join('\n');
 
   return (
     `  <label>\n` +
     `    ${escapeText(opts.label)}\n` +
-    `    <input type="color" data-bind="css-var" data-target="${escapeAttr(opts.target)}" value="${escapeAttr(value)}">\n` +
+    `    <input type="color" data-bind="css-var" data-target="${escapeAttr(opts.target)}" value="${escapeAttr(value)}" list="${listId}">\n` +
+    `    <datalist id="${listId}">\n${presetsHtml}\n    </datalist>\n` +
     `  </label>`
   );
 }
@@ -349,15 +371,25 @@ function validateCssVarTargetInRoot(content, propName) {
 }
 
 function buildControlMarkup(opts, existingContent) {
-  if (opts.type === 'class-toggle') {
-    if (opts.boolean) return buildCheckboxToggleControl(opts);
-    if (opts.radio) return buildRadioToggleControl(opts, existingContent);
-    return buildClassToggleControl(opts);
+  switch (opts.shape) {
+    case 'range':
+      validateCssVarTargetInRoot(existingContent, opts.target);
+      return buildContinuousControl(opts, existingContent);
+    case 'swatch':
+      validateCssVarTargetInRoot(existingContent, opts.target);
+      return buildSwatchControl(opts);
+    case 'color':
+      validateCssVarTargetInRoot(existingContent, opts.target);
+      return buildColorControl(opts, existingContent);
+    case 'select':
+      return buildClassToggleControl(opts);
+    case 'radio':
+      return buildRadioToggleControl(opts, existingContent);
+    case 'boolean':
+      return buildCheckboxToggleControl(opts);
+    default:
+      throw new Error(`unknown --shape "${opts.shape}"`);
   }
-  validateCssVarTargetInRoot(existingContent, opts.target);
-  if (opts.options) return buildSwatchControl(opts);
-  if (opts.min !== null || opts.max !== null) return buildContinuousControl(opts, existingContent);
-  return buildColorControl(opts);
 }
 
 // Pulls the generic .tuner-panel <style> and listener <script> straight out of the template —
@@ -707,7 +739,7 @@ function parseCreateArgs(args) {
 }
 
 const TUNE_VALUE_FLAGS = {
-  '--type': 'type',
+  '--shape': 'shape',
   '--target': 'target',
   '--label': 'label',
   '--options': 'options',
@@ -723,7 +755,7 @@ const TUNE_VALUE_FLAGS = {
 function parseTuneArgs(args) {
   const opts = {
     file: null,
-    type: null,
+    shape: null,
     target: null,
     label: null,
     options: null,
@@ -735,22 +767,12 @@ function parseTuneArgs(args) {
     prefix: null,
     remove: null,
     edit: null,
-    boolean: false,
-    radio: false,
   };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--readout') {
       opts.readout = true;
-      continue;
-    }
-    if (arg === '--boolean') {
-      opts.boolean = true;
-      continue;
-    }
-    if (arg === '--radio') {
-      opts.radio = true;
       continue;
     }
     const eq = arg.indexOf('=');
@@ -776,6 +798,48 @@ function parseTuneArgs(args) {
 // define one) — derived from TUNE_VALUE_FLAGS so a new flag added there can't drift out of sync.
 const CONTROL_DEFINITION_FLAGS = Object.values(TUNE_VALUE_FLAGS).filter((k) => k !== 'remove' && k !== 'edit');
 
+// Agreed flag table (.scratch/tuner-scaffold-gaps/issues/05): which flags each --shape accepts,
+// beyond the --target/--label every shape requires. `readout` is listed separately since it's a
+// bare boolean switch, not a --key value flag like the rest.
+const SHAPE_DEFS = {
+  range: { binding: 'css-var', required: ['min', 'max'], optional: ['value', 'unit'], readout: true },
+  swatch: { binding: 'css-var', required: ['options'], optional: [] },
+  color: { binding: 'css-var', required: [], optional: ['options', 'value'] },
+  select: { binding: 'class-toggle', required: ['options'], optional: ['value', 'prefix'] },
+  radio: { binding: 'class-toggle', required: ['options'], optional: ['value', 'prefix'] },
+  boolean: { binding: 'class-toggle', required: ['value'], optional: [] },
+};
+
+// The value flags whose applicability varies per shape (as opposed to --target/--label, which
+// every shape requires alike).
+const SHAPE_VARIABLE_FLAGS = ['options', 'min', 'max', 'value', 'unit', 'prefix'];
+
+// A custom-property name always starts with "--" (required by the CSS spec); a CSS selector never
+// does — so which one --target is names its own binding unambiguously, with no room for the two
+// forms to collide.
+function targetIsCssVarSyntax(target) {
+  return target.startsWith('--');
+}
+
+// Enforces the ticket's central rule: --shape and --target's own syntax must agree, checked before
+// anything else about the control so a mismatch is reported before any file gets written.
+function validateShapeTargetAgreement(opts) {
+  const def = SHAPE_DEFS[opts.shape];
+  const isCssVarSyntax = targetIsCssVarSyntax(opts.target);
+  if (def.binding === 'css-var' && !isCssVarSyntax) {
+    throw new Error(
+      `--shape ${opts.shape} binds to a css-var and requires --target to be a custom-property name ` +
+        `(starting with "--"), got "${opts.target}"`
+    );
+  }
+  if (def.binding === 'class-toggle' && isCssVarSyntax) {
+    throw new Error(
+      `--shape ${opts.shape} binds to a class-toggle and requires --target to be a CSS selector, not ` +
+        `a custom-property name, got "${opts.target}"`
+    );
+  }
+}
+
 function validateTuneOpts(opts) {
   if (!opts.file) throw new Error('missing required <file> argument');
 
@@ -784,8 +848,7 @@ function validateTuneOpts(opts) {
   }
 
   if (opts.remove !== null) {
-    const hasOther =
-      opts.readout || opts.boolean || opts.radio || CONTROL_DEFINITION_FLAGS.some((k) => opts[k] !== null);
+    const hasOther = opts.readout || CONTROL_DEFINITION_FLAGS.some((k) => opts[k] !== null);
     if (hasOther) {
       throw new Error('--remove takes no other flags besides <file> and --remove <target>');
     }
@@ -794,58 +857,28 @@ function validateTuneOpts(opts) {
 
   // --edit and plain add-mode both define a control with the same flags; --edit additionally
   // needs the old target (opts.edit) identifying which control to replace.
-  if (opts.type !== 'css-var' && opts.type !== 'class-toggle') {
-    throw new Error(`--type must be "css-var" or "class-toggle", got "${opts.type}"`);
+  if (!SHAPE_DEFS[opts.shape]) {
+    throw new Error(`--shape is required and must be one of: ${Object.keys(SHAPE_DEFS).join(', ')}`);
   }
   if (!opts.target) throw new Error('--target is required');
   if (!opts.label) throw new Error('--label is required');
+  validateShapeTargetAgreement(opts);
 
-  if (opts.type === 'class-toggle') {
-    if (opts.min !== null || opts.max !== null || opts.unit !== null || opts.readout) {
-      throw new Error('--min/--max/--unit/--readout only apply to --type css-var');
+  const def = SHAPE_DEFS[opts.shape];
+  const allowed = new Set([...def.required, ...def.optional]);
+  SHAPE_VARIABLE_FLAGS.forEach((flag) => {
+    if (opts[flag] !== null && !allowed.has(flag)) {
+      throw new Error(`--shape ${opts.shape} does not take --${flag}`);
     }
-    if (opts.boolean && opts.radio) {
-      throw new Error('--boolean and --radio are mutually exclusive');
-    }
-    if (opts.boolean) {
-      if (opts.options) {
-        throw new Error(
-          '--boolean does not take --options — it scaffolds a single fixed-class checkbox, not a set of variants'
-        );
-      }
-      if (!opts.value) {
-        throw new Error('--boolean requires --value naming the fixed class the checkbox toggles');
-      }
-      return;
-    }
-    if (opts.radio && !opts.options) {
-      throw new Error('--radio requires --options (comma-separated variant names)');
-    }
-    if (!opts.options) {
-      throw new Error(
-        '--type class-toggle requires --options (comma-separated variant names), or --boolean for a single checkbox'
-      );
-    }
-    return;
+  });
+  if (opts.readout && !def.readout) {
+    throw new Error(`--shape ${opts.shape} does not take --readout`);
   }
-
-  if (opts.prefix !== null) throw new Error('--prefix only applies to --type class-toggle');
-  if (opts.boolean || opts.radio) throw new Error('--boolean/--radio only apply to --type class-toggle');
-  const hasMin = opts.min !== null;
-  const hasMax = opts.max !== null;
-  const hasOptions = !!opts.options;
-  if ((hasMin || hasMax) && hasOptions) {
-    throw new Error('--type css-var takes either --min/--max (continuous) or --options (swatch), not both');
-  }
-  if (hasMin !== hasMax) {
-    throw new Error('a continuous css-var control requires both --min and --max');
-  }
-  // Neither --min/--max nor --options: scaffolds a color-input control (references/tuner-conventions.md
-  // — "no palette yet, tuner is helping find one"), so no "requires either" rejection here.
-  const hasRange = hasMin && hasMax;
-  if (!hasRange && opts.readout) {
-    throw new Error('--readout only applies to a continuous css-var control (needs --min/--max)');
-  }
+  def.required.forEach((flag) => {
+    if (opts[flag] === null) {
+      throw new Error(`--shape ${opts.shape} requires --${flag}`);
+    }
+  });
 }
 
 function parseValuesJson(raw) {
@@ -938,7 +971,7 @@ function runTune(args) {
     const updated = editControlInPanel(content, opts);
     fs.writeFileSync(filePath, updated, 'utf8');
     console.log(
-      `sketch-tool: replaced control targeting "${opts.edit}" with an updated ${opts.type} control in ${opts.file}`
+      `sketch-tool: replaced control targeting "${opts.edit}" with an updated ${opts.shape} control in ${opts.file}`
     );
     return;
   }
@@ -947,7 +980,7 @@ function runTune(args) {
     const controlHtml = buildControlMarkup(opts, content);
     const updated = appendControlToPanel(content, controlHtml);
     fs.writeFileSync(filePath, updated, 'utf8');
-    console.log(`sketch-tool: appended ${opts.type} control to existing tuner panel in ${opts.file}`);
+    console.log(`sketch-tool: appended ${opts.shape} control to existing tuner panel in ${opts.file}`);
     return;
   }
 
@@ -963,7 +996,7 @@ function runTune(args) {
   const injected = injectTunerPanel(content, controlHtml);
   fs.writeFileSync(targetPath, injected, 'utf8');
   console.log(
-    `sketch-tool: forked ${opts.file} -> ${path.relative(process.cwd(), targetPath)} and injected tuner panel with ${opts.type} control`
+    `sketch-tool: forked ${opts.file} -> ${path.relative(process.cwd(), targetPath)} and injected tuner panel with ${opts.shape} control`
   );
 }
 

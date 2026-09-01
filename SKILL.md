@@ -107,14 +107,13 @@ Name files descriptively: `sketch-<subject>.html`
 ### 5. Add tuners — only when asked
 
 1. Load `references/tuner-conventions.md` for the element-per-value-type mapping — this decides
-   `--type` and whether a `css-var` control is continuous or a swatch; what gets tuned is a
-   per-sketch human decision, don't infer it
+   `--shape`; what gets tuned is a per-sketch human decision, don't infer it
 2. Run:
 
    ```
-   node tools/sketch-tool.js tune <file> --type css-var|class-toggle --target <name-or-selector> \
-     --label <text> [--options a,b,c] [--min N --max N] [--value V] [--unit STR] [--readout] \
-     [--prefix STR] [--boolean | --radio]
+   node tools/sketch-tool.js tune <file> --shape <range|swatch|color|select|radio|boolean> \
+     --target <name-or-selector> --label <text> [--options a,b,c] [--min N --max N] [--value V] \
+     [--unit STR] [--readout] [--prefix STR]
    ```
 
    The command is smart about `<file>`'s state: run against the exploration sketch (no panel yet),
@@ -122,21 +121,35 @@ Name files descriptively: `sketch-<subject>.html`
    control — don't edit the exploration file in place (`docs/adr/0006`); the fork keeps the clean
    version demoable and becomes the live file iteration continues on (Step 7). Run again against that
    same tuned file, it appends the new control to the existing panel instead of duplicating the
-   `<details>` chrome, style, or script. `--type css-var` takes either `--min`/`--max` (continuous, with
-   optional `--value`/`--unit`) or `--options` (swatch buttons) — never both. `--type class-toggle`
-   treats `--target` as a CSS **selector**, not a custom property name, and takes one of: `--options`
-   (variant names for a `<select>`), `--options` plus `--radio` (one radio input per option, sharing a
-   `name`), or `--boolean` plus `--value` (a single checkbox toggling the one fixed class named by
-   `--value`). `--readout` wires a continuous control's live numeric readout
-   (`data-readout` plus a matching `<output>`) automatically — never hand-write that binding.
-   Controls are bound only via the `data-bind`/`data-target` attributes the template defines; see
-   `templates/tuner-panel.html`'s own examples of both bind types before wiring one by hand.
+   `<details>` chrome, style, or script.
+
+   The binding (`css-var` vs `class-toggle`) isn't a separate flag — it's derived from `--target`'s
+   own syntax: a custom-property name always starts with `--`, a CSS selector never does, so the two
+   forms can't collide. `--shape` and `--target` must agree, or the command errors before writing
+   anything:
+
+   | `--shape` | `--target` must be | Flags |
+   |---|---|---|
+   | `range` | custom property | `--min N --max N` (required), `--value`, `--unit`, `--readout` |
+   | `swatch` | custom property | `--options a,b,c` (required) |
+   | `color` | custom property | `--options a,b,c` (optional presets), `--value` (optional) |
+   | `select` | selector | `--options a,b,c` (required), `--value`, `--prefix` |
+   | `radio` | selector | `--options a,b,c` (required), `--value`, `--prefix` |
+   | `boolean` | selector | `--value` (required — names the class it toggles) |
+
+   Passing a flag a shape doesn't use errors rather than being silently ignored. `--readout` wires a
+   `range` control's live numeric readout (`data-readout` plus a matching `<output>`) automatically —
+   never hand-write that binding. `color`'s optional `--options` doesn't draw swatch buttons (that's
+   `--shape swatch`) — it adds a `<datalist>` of preset values the native color picker's `list`
+   attribute points at. Controls are bound only via the `data-bind`/`data-target` attributes the
+   template defines; see `templates/tuner-panel.html`'s own examples of both bind types before wiring
+   one by hand.
 
    To change an already-tuned file's controls, don't hand-edit the panel markup — use the same tool:
 
    ```
    node tools/sketch-tool.js tune <file> --remove <target>
-   node tools/sketch-tool.js tune <file> --edit <old-target> --type ... --target ... --label ... [...]
+   node tools/sketch-tool.js tune <file> --edit <old-target> --shape ... --target ... --label ... [...]
    ```
 
    `--remove <target>` deletes the control bound to that target — dropping the whole panel block if

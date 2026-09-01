@@ -13,8 +13,8 @@ Decided to add a single Node CLI, invoked by the model during generation, that p
 specific mechanical operations:
 
 - `create <file> [--type wireframe|styled] [--no-overlay]` — Steps 3 + 4.9
-- `tune <file> --type css-var|class-toggle --target ... [...]` — Step 5, fork-or-append depending
-  on whether `<file>` is already a tuned sketch with a panel
+- `tune <file> --shape range|swatch|color|select|radio|boolean --target ... [...]` — Step 5,
+  fork-or-append depending on whether `<file>` is already a tuned sketch with a panel
 - `bake <tuned-file> [--values '<json>']` — Step 6, fork to `-reference.html`, substitute given
   values (falling back to each control's own authored default for any control left unspecified),
   and strip both blocks entirely

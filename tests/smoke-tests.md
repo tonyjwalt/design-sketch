@@ -78,8 +78,7 @@ authored per-control
       (width) with a `data-readout`-wired `<output>`, select/radio for the discrete value (layout
       variant), `<input type="color">` for the accent (no palette exists yet, per the input)
 - [ ] All three controls, including the color input, are produced via `sketch-tool.js tune`
-      (`--type css-var` with neither `--min`/`--max` nor `--options` scaffolds the color input) —
-      not hand-authored panel markup
+      (`--shape color` scaffolds the color input) — not hand-authored panel markup
 - [ ] All controls use `data-bind`/`data-target` attributes; no per-control `addEventListener` was
       hand-written
 - [ ] Panel is a single `<details class="tuner-panel">` block, not interleaved with sketch content
