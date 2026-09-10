@@ -20,15 +20,27 @@ Trigger phrases: "sketch this", "visualize this proposal", "wireframe this", "dr
 
 Every sketch, at every stage, is exactly one self-contained `.html` file. See `docs/adr/` for why.
 
+## Install
+
+The `design-sketch/` folder is the entire skill — everything else in this repo (docs, tests,
+`CONTEXT.md`, `.scratch/`) is development-only and not needed at runtime. To install, copy just
+that folder, e.g.:
+
+```
+cp -r design-sketch ~/.claude/skills/design-sketch
+```
+
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `SKILL.md` | Workflow, HTML conventions, and the sketch lifecycle |
-| `references/tuner-conventions.md` | Element-per-value-type mapping for tuner panels |
-| `templates/wireframe-tokens.css` | Shipped grayscale/semantic token scale for wireframe mode |
-| `templates/tuner-panel.html` | Control-panel skeleton with generic binding JS |
-| `templates/id-overlay.html` | Hover-to-reveal-ID badge, press C to copy |
-| `CONTEXT.md` | Domain glossary — sketch lifecycle, tuner, bake, wireframe mode |
-| `docs/adr/` | Architectural decisions, including why every sketch stays one file |
-| `tests/` | Static structure checks and smoke tests |
+| `design-sketch/SKILL.md` | Workflow, HTML conventions, and the sketch lifecycle |
+| `design-sketch/references/tuner-conventions.md` | Element-per-value-type mapping for tuner panels |
+| `design-sketch/templates/wireframe-tokens.css` | Shipped grayscale/semantic token scale for wireframe mode |
+| `design-sketch/templates/tuner-panel.html` | Control-panel skeleton with generic binding JS |
+| `design-sketch/templates/id-overlay.html` | Hover-to-reveal-ID badge, press C to copy |
+| `design-sketch/tools/sketch-tool.js` | CLI helper mechanizing create/tune/bake steps |
+| `LICENSE` | MIT — free to use and redistribute |
+| `CONTEXT.md` | Domain glossary — sketch lifecycle, tuner, bake, wireframe mode (dev-only) |
+| `docs/adr/` | Architectural decisions, including why every sketch stays one file (dev-only) |
+| `tests/` | Static structure checks and smoke tests (dev-only) |

@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-DIR = Path(__file__).parent.parent
+DIR = Path(__file__).parent.parent / "design-sketch"
 SKILL_MD = DIR / "SKILL.md"
 SKETCH_TOOL = DIR / "tools" / "sketch-tool.js"
 
