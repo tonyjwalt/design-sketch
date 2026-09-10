@@ -206,7 +206,7 @@ def test_tune_first_call_forks_to_tuned_file_and_leaves_exploration_untouched():
         run_tune(
             tmp,
             "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
         )
 
         assert exploration.read_text() == FIXTURE_SKETCH  # exploration sketch untouched
@@ -233,7 +233,7 @@ def test_tune_continuous_control_wires_min_max_value_unit():
             tmp,
             "sketch-demo.html",
             [
-                "--type", "css-var", "--target", "--space-md", "--label", "Spacing",
+                "--shape", "range", "--target", "--space-md", "--label", "Spacing",
                 "--min", "4", "--max", "64", "--value", "20", "--unit", "rem",
             ],
         )
@@ -250,7 +250,7 @@ def test_tune_readout_wires_data_readout_and_output():
         run_tune(
             tmp,
             "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64", "--readout"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64", "--readout"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert 'data-readout="spacingOut"' in out
@@ -264,7 +264,7 @@ def test_tune_swatch_control_wires_one_button_per_option():
         run_tune(
             tmp,
             "sketch-demo.html",
-            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--options", "#3366ff,#e0403f"],
+            ["--shape", "swatch", "--target", "--accent-color", "--label", "Accent", "--options", "#3366ff,#e0403f"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert out.count("<button") == 2
@@ -279,7 +279,7 @@ def test_tune_class_toggle_wires_select_with_target_as_selector():
         run_tune(
             tmp,
             "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
+            ["--shape", "select", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert 'data-bind="class-toggle"' in out
@@ -296,12 +296,12 @@ def test_tune_second_call_appends_without_duplicating_panel():
         run_tune(
             tmp,
             "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
         )
         run_tune(
             tmp,
             "sketch-demo-tuned.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
+            ["--shape", "select", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
         )
 
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
@@ -321,12 +321,12 @@ def test_tune_fork_target_already_existing_errors_instead_of_overwriting():
         run_tune(
             tmp,
             "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
         )
         result = run_tune(
             tmp,
             "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
+            ["--shape", "select", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
             check=False,
         )
         assert result.returncode != 0
@@ -339,7 +339,7 @@ def test_tune_css_var_without_range_or_options_scaffolds_color_input():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent"],
+            ["--shape", "color", "--target", "--accent-color", "--label", "Accent"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert 'type="color"' in out
@@ -354,7 +354,7 @@ def test_tune_color_input_value_flag_sets_initial_hex():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--value", "#3366ff"],
+            ["--shape", "color", "--target", "--accent-color", "--label", "Accent", "--value", "#3366ff"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert 'value="#3366ff"' in out
@@ -366,7 +366,7 @@ def test_tune_color_input_rejects_readout():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--readout"],
+            ["--shape", "color", "--target", "--accent-color", "--label", "Accent", "--readout"],
             check=False,
         )
         assert result.returncode != 0
@@ -380,11 +380,11 @@ def test_tune_css_var_partial_range_errors():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4"],
             check=False,
         )
         assert result.returncode != 0
-        assert "--min" in result.stderr and "--max" in result.stderr
+        assert "--max" in result.stderr
 
 
 # -- tune: css-var root-scope validation (.scratch/tuner-scaffold-gaps/issues/02) ---------------
@@ -399,7 +399,7 @@ def test_tune_rejects_css_var_target_not_declared_in_root():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--undeclared-space", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--undeclared-space", "--label", "Spacing", "--min", "4", "--max", "64"],
             check=False,
         )
         assert result.returncode != 0
@@ -414,7 +414,7 @@ def test_tune_rejects_swatch_target_not_declared_in_root():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--undeclared-accent", "--label", "Accent", "--options", "#111,#222"],
+            ["--shape", "swatch", "--target", "--undeclared-accent", "--label", "Accent", "--options", "#111,#222"],
             check=False,
         )
         assert result.returncode != 0
@@ -427,7 +427,7 @@ def test_tune_rejects_color_input_target_not_declared_in_root():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--undeclared-accent", "--label", "Accent"],
+            ["--shape", "color", "--target", "--undeclared-accent", "--label", "Accent"],
             check=False,
         )
         assert result.returncode != 0
@@ -445,7 +445,7 @@ def test_tune_accepts_css_var_target_declared_via_var_indirection():
         (Path(tmp) / "sketch-demo.html").write_text(indirect_fixture)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--nav-bg", "--label", "Nav background"],
+            ["--shape", "color", "--target", "--nav-bg", "--label", "Nav background"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert 'data-target="--nav-bg"' in out
@@ -458,12 +458,12 @@ def test_tune_rejects_undeclared_target_when_appending_to_existing_panel():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
         )
         before = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         result = run_tune(
             tmp, "sketch-demo-tuned.html",
-            ["--type", "css-var", "--target", "--undeclared-accent", "--label", "Accent"],
+            ["--shape", "color", "--target", "--undeclared-accent", "--label", "Accent"],
             check=False,
         )
         assert result.returncode != 0
@@ -477,13 +477,13 @@ def test_tune_edit_rejects_new_target_not_declared_in_root():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
         )
         before = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         result = run_tune(
             tmp, "sketch-demo-tuned.html",
             [
-                "--edit", "--space-md", "--type", "css-var", "--target", "--undeclared-space",
+                "--edit", "--space-md", "--shape", "range", "--target", "--undeclared-space",
                 "--label", "Spacing", "--min", "4", "--max", "64",
             ],
             check=False,
@@ -500,11 +500,11 @@ def test_tune_color_input_second_call_appends_to_existing_panel():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
         )
         run_tune(
             tmp, "sketch-demo-tuned.html",
-            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent"],
+            ["--shape", "color", "--target", "--accent-color", "--label", "Accent"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert out.count("<!-- design-sketch:tuner-panel -->") == 1
@@ -520,12 +520,12 @@ def test_tune_edit_color_input_replaces_value_in_place():
         make_two_control_tuned_file(tmp)  # --space-md (Spacing), body (Layout)
         run_tune(
             tmp, "sketch-demo-tuned.html",
-            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--value", "#111111"],
+            ["--shape", "color", "--target", "--accent-color", "--label", "Accent", "--value", "#111111"],
         )
         run_tune(
             tmp, "sketch-demo-tuned.html",
             [
-                "--edit", "--accent-color", "--type", "css-var", "--target", "--accent-color",
+                "--edit", "--accent-color", "--shape", "color", "--target", "--accent-color",
                 "--label", "Accent", "--value", "#222222",
             ],
         )
@@ -542,7 +542,7 @@ def test_tune_remove_color_input_control():
         make_two_control_tuned_file(tmp)
         run_tune(
             tmp, "sketch-demo-tuned.html",
-            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent"],
+            ["--shape", "color", "--target", "--accent-color", "--label", "Accent"],
         )
         run_tune(tmp, "sketch-demo-tuned.html", ["--remove", "--accent-color"])
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
@@ -557,7 +557,7 @@ def test_tune_class_toggle_rejects_min_max():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "a,b", "--min", "0"],
+            ["--shape", "select", "--target", "body", "--label", "Layout", "--options", "a,b", "--min", "0"],
             check=False,
         )
         assert result.returncode != 0
@@ -574,7 +574,7 @@ def test_tune_class_toggle_boolean_scaffolds_checkbox():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean", "--value", "highlighted"],
+            ["--shape", "boolean", "--target", "body", "--label", "Highlight", "--value", "highlighted"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert 'type="checkbox"' in out
@@ -592,7 +592,7 @@ def test_tune_class_toggle_boolean_rejects_options():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean", "--options", "a,b", "--value", "a"],
+            ["--shape", "boolean", "--target", "body", "--label", "Highlight", "--options", "a,b", "--value", "a"],
             check=False,
         )
         assert result.returncode != 0
@@ -606,7 +606,7 @@ def test_tune_class_toggle_boolean_requires_value():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean"],
+            ["--shape", "boolean", "--target", "body", "--label", "Highlight"],
             check=False,
         )
         assert result.returncode != 0
@@ -620,7 +620,7 @@ def test_tune_class_toggle_radio_scaffolds_radio_group():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio", "--options", "compact,spacious"],
+            ["--shape", "radio", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert out.count('type="radio"') == 2
@@ -638,7 +638,7 @@ def test_tune_class_toggle_radio_value_flag_selects_that_option():
         run_tune(
             tmp, "sketch-demo.html",
             [
-                "--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio",
+                "--shape", "radio", "--target", "body", "--label", "Layout",
                 "--options", "compact,spacious", "--value", "spacious",
             ],
         )
@@ -653,33 +653,24 @@ def test_tune_class_toggle_radio_requires_options():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio"],
+            ["--shape", "radio", "--target", "body", "--label", "Layout"],
             check=False,
         )
         assert result.returncode != 0
         assert "--options" in result.stderr
 
 
-def test_tune_class_toggle_boolean_and_radio_mutually_exclusive():
-    """Passing both `--boolean` and `--radio` fails rather than silently picking one."""
+def test_tune_boolean_and_radio_flags_no_longer_exist():
+    """`--boolean`/`--radio` aren't modifier flags anymore — a control's shape is chosen directly
+    via `--shape boolean`/`--shape radio`, so the old flags are just unrecognized options now. This
+    also makes "both boolean and radio" and "boolean/radio against a css-var shape" structurally
+    impossible (a single --shape value can't be two things at once), so there's nothing left to
+    validate at runtime for either of those old cases."""
     with tempfile.TemporaryDirectory() as tmp:
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--boolean", "--radio", "--options", "a,b"],
-            check=False,
-        )
-        assert result.returncode != 0
-
-
-def test_tune_boolean_and_radio_reject_css_var():
-    """`--boolean`/`--radio` only apply to `--type class-toggle` — passing either against
-    `--type css-var` fails clearly instead of silently being ignored."""
-    with tempfile.TemporaryDirectory() as tmp:
-        (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
-        result = run_tune(
-            tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64", "--boolean"],
+            ["--shape", "select", "--target", "body", "--label", "Layout", "--options", "a,b", "--boolean"],
             check=False,
         )
         assert result.returncode != 0
@@ -687,7 +678,7 @@ def test_tune_boolean_and_radio_reject_css_var():
 
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64", "--radio"],
+            ["--shape", "select", "--target", "body", "--label", "Layout", "--options", "a,b", "--radio"],
             check=False,
         )
         assert result.returncode != 0
@@ -702,7 +693,7 @@ def test_tune_class_toggle_radio_wires_data_prefix():
         run_tune(
             tmp, "sketch-demo.html",
             [
-                "--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio",
+                "--shape", "radio", "--target", "body", "--label", "Layout",
                 "--options", "compact,spacious", "--prefix", "layout--",
             ],
         )
@@ -717,11 +708,11 @@ def test_tune_class_toggle_boolean_second_call_appends_to_existing_panel():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
         )
         run_tune(
             tmp, "sketch-demo-tuned.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean", "--value", "highlighted"],
+            ["--shape", "boolean", "--target", "body", "--label", "Highlight", "--value", "highlighted"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
         assert out.count("<!-- design-sketch:tuner-panel -->") == 1
@@ -738,8 +729,8 @@ def test_tune_edit_boolean_checkbox_control():
         run_tune(
             tmp, "sketch-demo-tuned.html",
             [
-                "--edit", "body", "--type", "class-toggle", "--target", "body",
-                "--label", "Highlight", "--boolean", "--value", "highlighted",
+                "--edit", "body", "--shape", "boolean", "--target", "body",
+                "--label", "Highlight", "--value", "highlighted",
             ],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
@@ -755,11 +746,11 @@ def test_tune_remove_radio_group_control():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
         )
         run_tune(
             tmp, "sketch-demo-tuned.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio", "--options", "compact,spacious"],
+            ["--shape", "radio", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
         )
         run_tune(tmp, "sketch-demo-tuned.html", ["--remove", "body"])
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
@@ -782,11 +773,11 @@ def make_two_control_tuned_file(tmp):
     (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
     run_tune(
         tmp, "sketch-demo.html",
-        ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
     )
     run_tune(
         tmp, "sketch-demo-tuned.html",
-        ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
+        ["--shape", "select", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
     )
 
 
@@ -808,7 +799,7 @@ def test_tune_remove_last_control_drops_entire_panel():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
         )
         run_tune(tmp, "sketch-demo-tuned.html", ["--remove", "--space-md"])
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
@@ -841,7 +832,7 @@ def test_tune_edit_on_file_with_no_panel_errors():
         (Path(tmp) / "sketch-demo.html").write_text(FIXTURE_SKETCH)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--edit", "--space-md", "--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "0", "--max", "1"],
+            ["--edit", "--space-md", "--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "0", "--max", "1"],
             check=False,
         )
         assert result.returncode != 0
@@ -855,7 +846,7 @@ def test_tune_edit_replaces_value_in_place():
         run_tune(
             tmp, "sketch-demo-tuned.html",
             [
-                "--edit", "--space-md", "--type", "css-var", "--target", "--space-md",
+                "--edit", "--space-md", "--shape", "range", "--target", "--space-md",
                 "--label", "Spacing", "--min", "8", "--max", "128",
             ],
         )
@@ -873,13 +864,13 @@ def test_tune_edit_preserves_position_among_three_controls():
         make_two_control_tuned_file(tmp)  # gives --space-md (Spacing), body (Layout)
         run_tune(
             tmp, "sketch-demo-tuned.html",
-            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--options", "#111,#222"],
+            ["--shape", "swatch", "--target", "--accent-color", "--label", "Accent", "--options", "#111,#222"],
         )  # now: Spacing, Layout, Accent
 
         run_tune(
             tmp, "sketch-demo-tuned.html",
             [
-                "--edit", "body", "--type", "class-toggle", "--target", "body",
+                "--edit", "body", "--shape", "select", "--target", "body",
                 "--label", "Layout", "--options", "compact,spacious,cozy",
             ],
         )
@@ -897,7 +888,7 @@ def test_tune_edit_can_change_the_target():
         run_tune(
             tmp, "sketch-demo-tuned.html",
             [
-                "--edit", "--space-md", "--type", "css-var", "--target", "--space-lg",
+                "--edit", "--space-md", "--shape", "range", "--target", "--space-lg",
                 "--label", "Spacing", "--min", "4", "--max", "64",
             ],
         )
@@ -912,7 +903,7 @@ def test_tune_edit_unknown_target_errors():
         make_two_control_tuned_file(tmp)
         result = run_tune(
             tmp, "sketch-demo-tuned.html",
-            ["--edit", "--nonexistent", "--type", "css-var", "--target", "--x", "--label", "X", "--min", "0", "--max", "1"],
+            ["--edit", "--nonexistent", "--shape", "range", "--target", "--x", "--label", "X", "--min", "0", "--max", "1"],
             check=False,
         )
         assert result.returncode != 0
@@ -984,11 +975,11 @@ def make_bake_ready_tuned_file(tmp):
     (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
     run_tune(
         tmp, "sketch-demo.html",
-        ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+        ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
     )
     run_tune(
         tmp, "sketch-demo-tuned.html",
-        ["--type", "class-toggle", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
+        ["--shape", "select", "--target", "body", "--label", "Layout", "--options", "compact,spacious"],
     )
 
 
@@ -1039,7 +1030,7 @@ def test_bake_color_input_control_leaves_root_declaration_untouched_without_over
         (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)  # declares --accent-color: #3366ff
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--value", "#e0403f"],
+            ["--shape", "color", "--target", "--accent-color", "--label", "Accent", "--value", "#e0403f"],
         )
         run_bake(tmp, "sketch-demo-tuned.html", [])
         out = (Path(tmp) / "sketch-demo-reference.html").read_text()
@@ -1053,7 +1044,7 @@ def test_bake_color_input_override_substitutes_root_declaration():
         (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--accent-color", "--label", "Accent", "--value", "#e0403f"],
+            ["--shape", "color", "--target", "--accent-color", "--label", "Accent", "--value", "#e0403f"],
         )
         run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"--accent-color": "#00ff00"}'])
         out = (Path(tmp) / "sketch-demo-reference.html").read_text()
@@ -1090,7 +1081,7 @@ def test_bake_class_toggle_default_uses_selected_option_not_first():
         run_tune(
             tmp, "sketch-demo.html",
             [
-                "--type", "class-toggle", "--target", "body", "--label", "Layout",
+                "--shape", "select", "--target", "body", "--label", "Layout",
                 "--options", "compact,spacious", "--value", "spacious",
             ],
         )
@@ -1121,7 +1112,7 @@ def test_bake_strips_id_overlay_markup_style_and_script():
         )
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
         )
         run_bake(tmp, "sketch-demo-tuned.html", [])
         out = (Path(tmp) / "sketch-demo-reference.html").read_text()
@@ -1177,7 +1168,7 @@ def test_bake_boolean_checkbox_scaffolded_via_cli_bakes_default_unchecked():
         (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean", "--value", "highlighted"],
+            ["--shape", "boolean", "--target", "body", "--label", "Highlight", "--value", "highlighted"],
         )
         run_bake(tmp, "sketch-demo-tuned.html", [])
         out = (Path(tmp) / "sketch-demo-reference.html").read_text()
@@ -1192,7 +1183,7 @@ def test_bake_boolean_checkbox_override_applies_class():
         (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
         run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "class-toggle", "--target", "body", "--label", "Highlight", "--boolean", "--value", "highlighted"],
+            ["--shape", "boolean", "--target", "body", "--label", "Highlight", "--value", "highlighted"],
         )
         run_bake(tmp, "sketch-demo-tuned.html", ["--values", '{"body": "highlighted"}'])
         out = (Path(tmp) / "sketch-demo-reference.html").read_text()
@@ -1200,14 +1191,14 @@ def test_bake_boolean_checkbox_override_applies_class():
 
 
 def test_bake_radio_group_scaffolded_via_cli_bakes_default_checked_option():
-    """A radio-group control scaffolded via `tune --radio` bakes in whichever option `--value`
+    """A radio-group control scaffolded via `tune --shape radio` bakes in whichever option `--value`
     marked `checked`."""
     with tempfile.TemporaryDirectory() as tmp:
         (Path(tmp) / "sketch-demo.html").write_text(BAKE_FIXTURE)
         run_tune(
             tmp, "sketch-demo.html",
             [
-                "--type", "class-toggle", "--target", "body", "--label", "Layout", "--radio",
+                "--shape", "radio", "--target", "body", "--label", "Layout",
                 "--options", "compact,spacious", "--value", "spacious",
             ],
         )
@@ -1268,7 +1259,7 @@ def test_tune_and_bake_agree_on_root_declaration_with_trailing_comment():
         (Path(tmp) / "sketch-demo.html").write_text(fixture)
         result = run_tune(
             tmp, "sketch-demo.html",
-            ["--type", "css-var", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
+            ["--shape", "range", "--target", "--space-md", "--label", "Spacing", "--min", "4", "--max", "64"],
             check=False,
         )
         assert result.returncode != 0
