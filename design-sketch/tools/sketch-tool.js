@@ -22,9 +22,12 @@ function usage() {
     'Usage: sketch-tool <subcommand> [options]',
     '',
     'Subcommands:',
-    '  create <file> [--type wireframe|styled] [--no-overlay]',
+    '  create <file> [--type wireframe|styled] [--tokens <css-file>] [--no-overlay]',
     '      Inject the id-overlay block (default on) and, for --type wireframe, merge',
-    '      wireframe-tokens.css custom properties into the file\'s :root.',
+    '      wireframe-tokens.css custom properties into the file\'s :root. --tokens <css-file> merges',
+    '      a user-supplied CSS file\'s :root custom properties in the same way, from any file already',
+    '      shaped as CSS custom-property declarations. --tokens and --type wireframe are mutually',
+    '      exclusive (both target :root, pick one source).',
     '',
     '  tune <file> --shape <range|swatch|color|select|radio|boolean> --target <name-or-selector>',
     '       --label <text> [--options a,b,c] [--min N --max N] [--value V] [--unit STR] [--readout]',
@@ -57,6 +60,17 @@ function usage() {
     '      the target element. Any control left out of --values bakes in at its authored default —',
     '      a css-var\'s current :root value, or a class-toggle\'s selected option / checked radio.',
     '      Deletes the tuner-panel and id-overlay blocks (markup, style, and script) entirely.',
+    '',
+    '  rebrand <file> --map \'<json>\'',
+    '      Moves a wireframe sketch off the shipped --wf-* scale onto the user\'s own tokens, without',
+    '      touching HTML/DOM. --map is a JSON object keyed by every --wf-* property actually',
+    '      referenced in <file> (var(--wf-x) usages, not the full shipped scale), each mapped to the',
+    '      replacement custom property name to use instead (e.g. "--brand-space-md"). Every used',
+    '      --wf-* name must have an entry — the command refuses to run, writing nothing, if any are',
+    '      missing (that mapping is a judgment call, not something to guess). Every mapped-to name',
+    '      must already be declared in <file>\'s :root — merge your tokens first via',
+    '      `create --tokens <file>`. Rewrites each var(--wf-x, ...) usage to var(--target, ...)',
+    '      (fallback preserved), then deletes the --wf-* declarations from :root entirely.',
   ].join('\n');
 }
 
@@ -145,35 +159,90 @@ function insertRootBlock(content, rootBlockText) {
   throw new Error('no <style> tag or </head> found to inject wireframe tokens into');
 }
 
-function mergeWireframeTokens(content) {
-  const wfCssPath = path.join(TEMPLATES_DIR, 'wireframe-tokens.css');
-  const wfCss = fs.readFileSync(wfCssPath, 'utf8');
-  const wfRoot = findRootBlock(wfCss);
-  if (!wfRoot) {
-    throw new Error(`no :root block found in ${wfCssPath}`);
+// Shared by both --type wireframe (source: the skill's own wireframe-tokens.css) and --tokens
+// <file> (source: a user-supplied CSS file) — same merge-without-duplicating operation regardless
+// of whose tokens they are (docs/adr/0003).
+function mergeTokensFromFile(content, sourceCssPath, commentLabel) {
+  const sourceCss = fs.readFileSync(sourceCssPath, 'utf8');
+  const sourceRoot = findRootBlock(sourceCss);
+  if (!sourceRoot) {
+    throw new Error(`no :root block found in ${sourceCssPath}`);
   }
 
   const targetRoot = findRootBlock(content);
 
   if (!targetRoot) {
-    // No :root at all yet in the target file — bring the whole wireframe :root over verbatim.
-    const rootBlockText = `:root {${wfRoot.inner}}`;
+    // No :root at all yet in the target file — bring the whole source :root over verbatim.
+    const rootBlockText = `:root {${sourceRoot.inner}}`;
     return insertRootBlock(content, rootBlockText);
   }
 
-  const wfProps = parseCustomProps(wfRoot.inner);
+  const sourceProps = parseCustomProps(sourceRoot.inner);
   const existingNames = new Set(parseCustomProps(targetRoot.inner).map((p) => p.name));
-  const missing = wfProps.filter((p) => !existingNames.has(p.name));
+  const missing = sourceProps.filter((p) => !existingNames.has(p.name));
 
   if (missing.length === 0) return content; // already merged, nothing to do
 
   const insertion =
-    '\n  /* wireframe tokens (design-sketch) */\n' +
+    `\n  /* ${commentLabel} (design-sketch) */\n` +
     missing.map((p) => '  ' + p.line).join('\n') +
     '\n';
 
   const before = content.slice(0, targetRoot.closeBrace).replace(/[ \t]+$/, '');
   return before + insertion + content.slice(targetRoot.closeBrace);
+}
+
+function mergeWireframeTokens(content) {
+  const wfCssPath = path.join(TEMPLATES_DIR, 'wireframe-tokens.css');
+  return mergeTokensFromFile(content, wfCssPath, 'wireframe tokens');
+}
+
+// -- rebrand (wireframe -> user tokens lifecycle) ----------------------------------------
+
+const WF_NAME_RE = /^--wf-[A-Za-z0-9-]+$/;
+
+// Every distinct --wf-* custom property referenced via var(...) outside the :root block itself —
+// that's the sketch's own rules, i.e. what actually needs remapping. References inside :root are
+// wireframe tokens pointing at each other (e.g. --wf-space-inset-md: var(--wf-space-md)) and are
+// moot once the whole --wf-* group is deleted, so they're deliberately excluded from this scan.
+function findUsedWfVars(content, root) {
+  const outside = root ? content.slice(0, root.openBrace) + content.slice(root.closeBrace + 1) : content;
+  const used = new Set();
+  const re = /var\(\s*(--wf-[A-Za-z0-9-]+)/g;
+  let m;
+  while ((m = re.exec(outside)) !== null) used.add(m[1]);
+  return used;
+}
+
+// Deletes every `--wf-*: ...;` declaration line from a :root block's inner text, plus the
+// "wireframe tokens (design-sketch)" comment mergeWireframeTokens inserts above them — leaves
+// everything else in :root untouched, including declaration order.
+function removeWfDeclarations(content) {
+  const root = findRootBlock(content);
+  if (!root) return content;
+
+  const lines = root.inner.split('\n');
+  const kept = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (trimmed === '/* wireframe tokens (design-sketch) */') return false;
+    const propMatch = /^(--[A-Za-z0-9-]+)\s*:/.exec(trimmed);
+    if (propMatch && WF_NAME_RE.test(propMatch[1])) return false;
+    return true;
+  });
+
+  const newInner = kept.join('\n').replace(/\n{3,}/g, '\n\n');
+  return content.slice(0, root.openBrace + 1) + newInner + content.slice(root.closeBrace);
+}
+
+// Rewrites every `var(--wf-x ...)` reference to `var(--brand-y ...)` per `map` (wireframe name ->
+// target name), preserving any fallback argument (`var(--wf-x, 8px)` -> `var(--brand-y, 8px)`).
+function rewriteWfUsages(content, map) {
+  let result = content;
+  Object.entries(map).forEach(([wfName, targetName]) => {
+    const re = new RegExp(`var\\(\\s*${escapeRegExp(wfName)}\\b`, 'g');
+    result = result.replace(re, `var(${targetName}`);
+  });
+  return result;
 }
 
 // -- tuner-panel injection ---------------------------------------------------------------
@@ -407,9 +476,13 @@ function loadPanelChrome() {
 
 function buildPanelBlock(controlHtml) {
   const { style, script } = loadPanelChrome();
+  // The export button is a sibling of .tuner-panel-body, not a child — appendControlToPanel/
+  // spliceBody only ever touch the body div's own contents, so keeping it outside that div is
+  // what lets --edit/--remove rebuild the body without wiping it.
   const details =
     `<details class="tuner-panel" id="tunerPanel" open>\n  <summary class="tuner-panel-header">Tuners</summary>\n` +
-    `  <div class="tuner-panel-body">\n\n${controlHtml}\n\n  </div>\n</details>`;
+    `  <div class="tuner-panel-body">\n\n${controlHtml}\n\n  </div>\n\n` +
+    `  <button type="button" class="tuner-panel-export" id="tunerExport">Download values</button>\n</details>`;
   return `${TUNER_PANEL_START}\n${style}\n\n${details}\n\n${script}\n${TUNER_PANEL_END}\n`;
 }
 
@@ -712,7 +785,7 @@ function bakeClassToggleControls(content, controls, values) {
 // -- arg parsing -----------------------------------------------------------------------
 
 function parseCreateArgs(args) {
-  const opts = { file: null, type: 'styled', noOverlay: false };
+  const opts = { file: null, type: 'styled', noOverlay: false, tokens: null };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--no-overlay') {
@@ -721,6 +794,10 @@ function parseCreateArgs(args) {
       opts.type = args[++i];
     } else if (arg.startsWith('--type=')) {
       opts.type = arg.slice('--type='.length);
+    } else if (arg === '--tokens') {
+      opts.tokens = args[++i];
+    } else if (arg.startsWith('--tokens=')) {
+      opts.tokens = arg.slice('--tokens='.length);
     } else if (arg.startsWith('--')) {
       throw new Error(`unknown option: ${arg}`);
     } else if (opts.file === null) {
@@ -733,6 +810,13 @@ function parseCreateArgs(args) {
   if (!opts.file) throw new Error('missing required <file> argument');
   if (opts.type !== 'wireframe' && opts.type !== 'styled') {
     throw new Error(`--type must be "wireframe" or "styled", got "${opts.type}"`);
+  }
+  if (opts.tokens && opts.type === 'wireframe') {
+    throw new Error(
+      '--tokens and --type wireframe are mutually exclusive — both merge a token :root into the ' +
+        "sketch; pick one source. Use --tokens <file> for the user's own tokens, or --type wireframe " +
+        "for the skill's shipped scale."
+    );
   }
 
   return opts;
@@ -915,6 +999,49 @@ function parseBakeArgs(args) {
   return opts;
 }
 
+function parseMapJson(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`--map must be valid JSON: ${err.message}`);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('--map must be a JSON object mapping each --wf-* name to its replacement custom property');
+  }
+  Object.entries(parsed).forEach(([k, v]) => {
+    if (!WF_NAME_RE.test(k)) {
+      throw new Error(`--map key "${k}" must be a --wf-* custom property name`);
+    }
+    if (typeof v !== 'string' || !/^--[A-Za-z0-9-]+$/.test(v)) {
+      throw new Error(`--map value for "${k}" must be a custom property name (e.g. "--brand-space-md")`);
+    }
+  });
+  return parsed;
+}
+
+function parseRebrandArgs(args) {
+  const opts = { file: null, map: null };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--map') {
+      opts.map = parseMapJson(args[++i]);
+    } else if (arg.startsWith('--map=')) {
+      opts.map = parseMapJson(arg.slice('--map='.length));
+    } else if (arg.startsWith('--')) {
+      throw new Error(`unknown option: ${arg}`);
+    } else if (opts.file === null) {
+      opts.file = arg;
+    } else {
+      throw new Error(`unexpected argument: ${arg}`);
+    }
+  }
+
+  if (!opts.file) throw new Error('missing required <file> argument');
+  if (!opts.map) throw new Error('missing required --map \'<json>\'');
+  return opts;
+}
+
 // -- subcommands -----------------------------------------------------------------------
 
 function runCreate(args) {
@@ -932,6 +1059,16 @@ function runCreate(args) {
 
   let content = fs.readFileSync(filePath, 'utf8');
   const notes = [];
+
+  if (opts.tokens) {
+    const tokensPath = path.resolve(opts.tokens);
+    if (!fs.existsSync(tokensPath)) {
+      throw new Error(`no such tokens file: ${opts.tokens}`);
+    }
+    const before = content;
+    content = mergeTokensFromFile(content, tokensPath, 'custom tokens');
+    notes.push(content === before ? 'custom tokens already present' : 'custom tokens merged into :root');
+  }
 
   if (opts.type === 'wireframe') {
     const before = content;
@@ -1027,6 +1164,53 @@ function runBake(args) {
   console.log(`sketch-tool: baked ${opts.file} -> ${path.relative(process.cwd(), targetPath)}`);
 }
 
+function runRebrand(args) {
+  const opts = parseRebrandArgs(args);
+  const filePath = path.resolve(opts.file);
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`no such file: ${opts.file}`);
+  }
+  if (isReferenceFile(filePath)) {
+    throw new Error(
+      `${opts.file} is a reference sketch — frozen at bake, not reopened. Fork a new exploration ` +
+        `sketch instead (SKILL.md Step 7, docs/adr/0006).`
+    );
+  }
+
+  const content = fs.readFileSync(filePath, 'utf8');
+  const root = findRootBlock(content);
+  const usedWf = findUsedWfVars(content, root);
+
+  if (usedWf.size === 0) {
+    console.log(`sketch-tool: no --wf-* usages found in ${opts.file} — nothing to rebrand`);
+    return;
+  }
+
+  const missing = [...usedWf].filter((name) => !(name in opts.map));
+  if (missing.length > 0) {
+    throw new Error(
+      `--map is missing an entry for ${missing.join(', ')} — every --wf-* property referenced in ` +
+        `${opts.file} needs an explicit replacement before rebrand will touch anything`
+    );
+  }
+
+  const undeclared = Object.values(opts.map).filter((name) => !isCustomPropDeclaredInRoot(content, name));
+  if (undeclared.length > 0) {
+    throw new Error(
+      `--map targets ${undeclared.join(', ')}, not declared in ${opts.file}'s :root — merge your ` +
+        `tokens first via \`sketch-tool create --tokens <file>\``
+    );
+  }
+
+  let updated = rewriteWfUsages(content, opts.map);
+  updated = removeWfDeclarations(updated);
+
+  fs.writeFileSync(filePath, updated, 'utf8');
+  console.log(
+    `sketch-tool: rebranded ${opts.file} — remapped ${Object.keys(opts.map).length} wireframe token(s) and removed the --wf-* group from :root`
+  );
+}
+
 function main(argv) {
   const [subcommand, ...rest] = argv;
 
@@ -1050,6 +1234,11 @@ function main(argv) {
     return;
   }
 
+  if (subcommand === 'rebrand') {
+    runRebrand(rest);
+    return;
+  }
+
   console.error(`sketch-tool: unknown subcommand "${subcommand}"\n`);
   console.error(usage());
   process.exit(1);
@@ -1067,6 +1256,7 @@ if (require.main === module) {
 module.exports = {
   injectIdOverlay,
   mergeWireframeTokens,
+  mergeTokensFromFile,
   findRootBlock,
   parseCustomProps,
   isCustomPropDeclaredInRoot,
@@ -1084,4 +1274,7 @@ module.exports = {
   locateOpeningTag,
   addClassToTag,
   stripBlock,
+  findUsedWfVars,
+  removeWfDeclarations,
+  rewriteWfUsages,
 };

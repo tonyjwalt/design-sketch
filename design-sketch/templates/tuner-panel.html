@@ -78,6 +78,20 @@
     border: 1px solid rgba(0, 0, 0, 0.2);
     cursor: pointer;
   }
+  .tuner-panel-export {
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    border: none;
+    border-top: 1px solid #dcdfe4;
+    background: #f9fafb;
+    color: #374151;
+    font: 12px system-ui, sans-serif;
+    cursor: pointer;
+  }
+  .tuner-panel-export:hover {
+    background: #f0f1f3;
+  }
 </style>
 
 <details class="tuner-panel" id="tunerPanel" open>
@@ -118,6 +132,11 @@
   </label>
 
   </div>
+
+  <!-- Sibling of .tuner-panel-body, not a child — --edit/--remove rebuild the body div from its
+       <label> blocks alone, so anything inside that div other than a control gets silently
+       dropped. Keeping this button outside the body div is what lets it survive those rebuilds. -->
+  <button type="button" class="tuner-panel-export" id="tunerExport">Download values</button>
 </details>
 
 <script>
@@ -160,5 +179,37 @@
       target.classList.add(prefix + el.value);
     }
   });
+
+  var exportBtn = document.getElementById('tunerExport');
+  if (exportBtn) {
+    // Keyed by data-target, same shape bake's --values expects — download the file, then hand
+    // it straight to `bake --values "$(cat file.json)"` (or its path, for the agent to read).
+    exportBtn.addEventListener('click', function () {
+      var values = {};
+      panel.querySelectorAll('[data-target]').forEach(function (el) {
+        var target = el.dataset.target;
+        if (Object.prototype.hasOwnProperty.call(values, target)) return;
+        if (el.dataset.bind === 'css-var') {
+          values[target] = getComputedStyle(document.documentElement).getPropertyValue(target).trim();
+        } else if (el.dataset.bind === 'class-toggle') {
+          var targetEl = document.querySelector(target);
+          var prefix = el.dataset.prefix || '';
+          var match = targetEl && Array.from(targetEl.classList).find(function (c) {
+            return c.indexOf(prefix) === 0;
+          });
+          values[target] = match ? match.slice(prefix.length) : '';
+        }
+      });
+      var blob = new Blob([JSON.stringify(values, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = (document.title || 'tuner-values').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-tuner-values.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
 })();
 </script>

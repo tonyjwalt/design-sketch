@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Structural validation for design-sketch."""
+import json
 import re
 import subprocess
 import tempfile
@@ -164,6 +165,210 @@ def test_create_twice_does_not_duplicate_wireframe_tokens():
     assert out.count(":root") == 1
 
 
+def test_create_tokens_merges_custom_file_into_existing_root():
+    """`create --tokens <file>` merges a user-supplied CSS file's :root props, same as --type
+    wireframe does for the shipped scale (docs/adr/0003 — real tokens only via explicit hand-off)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tokens = Path(tmp) / "brand-tokens.css"
+        tokens.write_text(":root {\n  --brand-space-md: 20px;\n  --brand-accent: #ff0055;\n}\n")
+        sketch = Path(tmp) / "sketch-demo.html"
+        sketch.write_text(FIXTURE_SKETCH)
+        subprocess.run(
+            ["node", str(SKETCH_TOOL), "create", str(sketch), "--tokens", str(tokens)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        out = sketch.read_text()
+    assert "--brand-space-md: 20px;" in out
+    assert "--brand-accent: #ff0055;" in out
+    assert "--demo-color: #333;" in out  # original declaration preserved
+    assert out.count(":root") == 1
+
+
+def test_create_tokens_twice_does_not_duplicate():
+    """Running `create --tokens <file>` twice does not duplicate the merged custom properties."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tokens = Path(tmp) / "brand-tokens.css"
+        tokens.write_text(":root {\n  --brand-accent: #ff0055;\n}\n")
+        sketch = Path(tmp) / "sketch-demo.html"
+        sketch.write_text(FIXTURE_SKETCH)
+        for _ in range(2):
+            subprocess.run(
+                ["node", str(SKETCH_TOOL), "create", str(sketch), "--tokens", str(tokens)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        out = sketch.read_text()
+    assert out.count("--brand-accent: #ff0055;") == 1
+    assert out.count(":root") == 1
+
+
+def test_create_tokens_and_type_wireframe_are_mutually_exclusive():
+    """`--tokens` and `--type wireframe` both merge a token :root into the sketch — combining them
+    is ambiguous about which source wins, so the command errors before writing anything."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tokens = Path(tmp) / "brand-tokens.css"
+        tokens.write_text(":root {\n  --brand-accent: #ff0055;\n}\n")
+        sketch = Path(tmp) / "sketch-demo.html"
+        sketch.write_text(FIXTURE_SKETCH)
+        result = subprocess.run(
+            ["node", str(SKETCH_TOOL), "create", str(sketch), "--type", "wireframe", "--tokens", str(tokens)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert "mutually exclusive" in result.stderr
+        assert sketch.read_text() == FIXTURE_SKETCH  # untouched
+
+
+# -- rebrand subcommand -------------------------------------------------------------------
+
+REBRAND_FIXTURE = """<!doctype html>
+<html>
+<head>
+<style>
+  :root {
+    --demo-color: #333;
+  }
+  body {
+    background: var(--wf-bg);
+    padding: var(--wf-space-md, 16px);
+    color: var(--demo-color);
+  }
+</style>
+</head>
+<body>
+<main id="content">Hello</main>
+</body>
+</html>
+"""
+
+
+def setup_rebrand_fixture(tmp, brand_props="--brand-space-md: 24px;\n  --brand-bg: #fff;"):
+    """Writes a wireframed sketch (rebrand fixture + --type wireframe) with brand tokens already
+    merged in via --tokens, and returns its path."""
+    sketch = Path(tmp) / "sketch-demo.html"
+    sketch.write_text(REBRAND_FIXTURE)
+    subprocess.run(
+        ["node", str(SKETCH_TOOL), "create", str(sketch), "--type", "wireframe"],
+        check=True, capture_output=True, text=True,
+    )
+    tokens = Path(tmp) / "brand-tokens.css"
+    tokens.write_text(":root {\n  " + brand_props + "\n}\n")
+    subprocess.run(
+        ["node", str(SKETCH_TOOL), "create", str(sketch), "--tokens", str(tokens)],
+        check=True, capture_output=True, text=True,
+    )
+    return sketch
+
+
+def test_rebrand_remaps_usages_and_strips_wireframe_group():
+    """`rebrand --map` rewrites var(--wf-x) usages to the mapped brand token and deletes the
+    --wf-* declarations from :root entirely, without touching HTML/DOM."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sketch = setup_rebrand_fixture(tmp)
+        mapping = json.dumps({"--wf-bg": "--brand-bg", "--wf-space-md": "--brand-space-md"})
+        result = subprocess.run(
+            ["node", str(SKETCH_TOOL), "rebrand", str(sketch), "--map", mapping],
+            capture_output=True, text=True,
+        )
+        out = sketch.read_text()
+    assert result.returncode == 0
+    assert "var(--brand-bg)" in out
+    assert "var(--brand-space-md, 16px)" in out  # fallback preserved
+    assert "--wf-bg" not in out
+    assert "--wf-space-md" not in out
+    assert "--demo-color: #333;" in out  # untouched declaration survives
+    assert '<main id="content">Hello</main>' in out  # HTML/DOM untouched
+    assert out.count(":root") == 1
+
+
+def test_rebrand_second_run_is_a_no_op():
+    """Running `rebrand` again after all --wf-* usages are gone does nothing (idempotent), rather
+    than erroring on an empty --map requirement."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sketch = setup_rebrand_fixture(tmp)
+        mapping = json.dumps({"--wf-bg": "--brand-bg", "--wf-space-md": "--brand-space-md"})
+        subprocess.run(
+            ["node", str(SKETCH_TOOL), "rebrand", str(sketch), "--map", mapping],
+            check=True, capture_output=True, text=True,
+        )
+        once = sketch.read_text()
+        result = subprocess.run(
+            ["node", str(SKETCH_TOOL), "rebrand", str(sketch), "--map", mapping],
+            capture_output=True, text=True,
+        )
+        twice = sketch.read_text()
+    assert result.returncode == 0
+    assert "nothing to rebrand" in result.stdout
+    assert once == twice
+
+
+def test_rebrand_refuses_when_map_missing_a_used_token():
+    """`rebrand` refuses to write anything if any --wf-* property actually used in the sketch has
+    no --map entry — the mapping is a judgment call, never guessed at."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sketch = setup_rebrand_fixture(tmp)
+        before = sketch.read_text()
+        result = subprocess.run(
+            ["node", str(SKETCH_TOOL), "rebrand", str(sketch), "--map", json.dumps({"--wf-bg": "--brand-bg"})],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+        assert "--wf-space-md" in result.stderr
+        assert sketch.read_text() == before
+
+
+def test_rebrand_refuses_when_target_not_declared_in_root():
+    """`rebrand` refuses if a --map target isn't already declared in :root — the user's tokens must
+    be merged first via `create --tokens <file>`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sketch = Path(tmp) / "sketch-demo.html"
+        sketch.write_text(REBRAND_FIXTURE)
+        subprocess.run(
+            ["node", str(SKETCH_TOOL), "create", str(sketch), "--type", "wireframe"],
+            check=True, capture_output=True, text=True,
+        )
+        before = sketch.read_text()
+        mapping = json.dumps({"--wf-bg": "--brand-bg", "--wf-space-md": "--brand-space-md"})
+        result = subprocess.run(
+            ["node", str(SKETCH_TOOL), "rebrand", str(sketch), "--map", mapping],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+        assert "not declared" in result.stderr
+        assert sketch.read_text() == before
+
+
+def test_rebrand_rejects_map_key_that_is_not_a_wf_property():
+    """--map keys must be --wf-* names — anything else is a mistaken invocation, not a valid
+    mapping, and should fail fast rather than silently doing nothing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sketch = setup_rebrand_fixture(tmp)
+        result = subprocess.run(
+            ["node", str(SKETCH_TOOL), "rebrand", str(sketch), "--map", json.dumps({"--demo-color": "--brand-bg"})],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+        assert "--wf-*" in result.stderr
+
+
+def test_rebrand_refuses_against_reference_sketch():
+    """`rebrand` refuses to run against a `-reference.html` file, same guard as `create`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sketch = Path(tmp) / "sketch-demo-reference.html"
+        sketch.write_text(REBRAND_FIXTURE)
+        result = subprocess.run(
+            ["node", str(SKETCH_TOOL), "rebrand", str(sketch), "--map", json.dumps({"--wf-bg": "--brand-bg"})],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+        assert "reference sketch" in result.stderr
+        assert sketch.read_text() == REBRAND_FIXTURE
+
+
 def test_create_refuses_against_reference_sketch():
     """`create` refuses to run against a `-reference.html` file (docs/adr/0006) — it's frozen at
     bake, and create writes in place, so nothing else would stop it from silently resurrecting the
@@ -267,7 +472,7 @@ def test_tune_swatch_control_wires_one_button_per_option():
             ["--shape", "swatch", "--target", "--accent-color", "--label", "Accent", "--options", "#3366ff,#e0403f"],
         )
         out = (Path(tmp) / "sketch-demo-tuned.html").read_text()
-        assert out.count("<button") == 2
+        assert out.count('<button type="button" value="#') == 2
         assert 'value="#3366ff"' in out and 'value="#e0403f"' in out
         assert 'class="swatch-row"' in out
 
