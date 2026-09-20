@@ -1,6 +1,8 @@
 # design-sketch
 
 Generate lightweight single-file HTML/CSS sketches to visualize proposals and design ideas.
+Exploration happens fast and cheaply wherever possible — start in chat, elevate to ASCII, then to
+HTML (wireframe or styled fidelity, your choice), and optionally tune from there.
 
 ## Activation
 
@@ -10,7 +12,20 @@ Trigger phrases: "sketch this", "visualize this proposal", "wireframe this", "dr
 
 1. Asks where to save sketches (first time per session)
 2. Resolves ambiguity cheaply — ask → ASCII sketch → HTML sketch
-3. Produces a self-contained HTML file, with an ID hover-overlay on by default
+
+   ```
+   +--------------------------------+
+   | [Logo]         [Search......]  |
+   +--------------------------------+
+   | [Card]  [Card]  [Card]  [Card] |
+   |  img     img     img     img   |
+   |  title   title   title  title  |
+   +--------------------------------+
+   ```
+
+3. Produces a self-contained HTML file, with an ID hover-overlay on by default — hover an element to
+   see its ID, press C to copy it, so follow-up prompts can reference "this exact element" instead of
+   describing it
 4. Optionally switches to wireframe fidelity (shipped grayscale token scale) when layout matters
    more than visual polish
 5. Optionally adds a tuner panel (native HTML controls, templated binding JS) to hone a value live
@@ -44,3 +59,8 @@ cp -r design-sketch ~/.claude/skills/design-sketch
 | `CONTEXT.md` | Domain glossary — sketch lifecycle, tuner, bake, wireframe mode (dev-only) |
 | `docs/adr/` | Architectural decisions, including why every sketch stays one file (dev-only) |
 | `tests/` | Static structure checks and smoke tests (dev-only) |
+
+## Support
+
+This project is free and MIT licensed. If it saves you time, consider
+[buying me a coffee on Ko-fi](https://ko-fi.com/tonyjwalt) — totally optional.
